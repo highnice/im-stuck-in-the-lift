@@ -1,0 +1,21 @@
+{
+  "name": "stuck-in-the-lift",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Elevator mini-game — Express + Socket.io",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "verify": "node server/verify-flow.js"
+  },
+  "engines": {
+    "node": "20.x"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "socket.io": "^4.8.1"
+  },
+  "devDependencies": {
+    "socket.io-client": "^4.8.3"
+  }
+}

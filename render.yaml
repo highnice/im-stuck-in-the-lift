@@ -1,0 +1,14 @@
+# Render Blueprint — https://render.com
+services:
+  - type: web
+    name: stuck-in-the-lift
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      - key: HOST_PIN
+        generateValue: false

@@ -1,0 +1,1678 @@
+/* PROJECT: re im stuck in the lift */
+/* MAP: :root+z-index ~L19 | .lift-frame ~L135 | #host-bar ~L1290 | z ใช้ var() เท่านั้น */
+
+body {
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background-color: hsl(216, 41%, 61%);
+  height: 100dvh;
+  width: 100vw;
+  font-family: system-ui, sans-serif;
+  transition: background-color 0.6s ease;
+}
+
+body.is-arrived {
+  background-color: #0d1d3e;
+}
+
+:root {
+  --neu-light:  rgba(184, 224, 255, 0.5);
+  --neu-shadow: rgba(8, 30, 66, 0.35);
+  --neu-blur:   45px;
+  --neu-offset: 15px;
+  --neu-blur-md:   15px;
+  --neu-offset-md: 6px;
+  --neu-blur-sm:   10px;
+  --neu-offset-sm: 5px;
+  --lift-lock-ratio: 396.92 / 796.6;
+  --lift-lock-w: min(100vw, calc(100dvh * 396.92 / 796.6));
+  --lift-lock-h: min(100dvh, calc(100vw * 796.6 / 396.92));
+  /* แผงโหวต (.panel-frame) */
+  --vote-panel-scale: 1.4;
+  --vote-panel-shift-x: -20px;
+  --vote-panel-float-scale: 1.36;
+  /* z-index: เกม 1–21 | UI 25–30 */
+  --z-elevator:         1;   /* ลิฟต์ด้านหลัง */
+  --z-panel:            5;   /* แผงปุ่ม + button-overlay */
+  --z-flash:           11;   /* แฟลชขาวตอนเริ่ม */
+  --z-floor-indicator: 12;   /* ตัวเลขชั้นก่อนเปิดประตู */
+  --z-door-close:      20;   /* ประตูปิด SUMMIT */
+  --z-frame:           14;   /* กรอบหลังถึงชั้น */
+  --z-monitor:         15;   /* จอเข็มชั้น */
+  --z-panel-numbers:   16;   /* ไฟเลขชั้นข้างแผง */
+  --z-direct-panel:    17;   /* กล่อง+คนข้างแผง */
+  --z-cone:            21;   /* กรวยชั้น (.cone-container) */
+  --z-doors:           24;   /* ประตูเปิดหน้าฉาก (.door-wrapper-*) */
+  --z-below-ui:        25;
+  --z-lobby:           26;
+  --z-host-bar:        22;   /* ต่ำกว่าประตู(24) — ไม่ทับฉากเปิดประตูแรก */
+  --z-start:           28;
+  --z-toast:           29;
+  --z-game-over:       30;
+}
+
+.start-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-start);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background-color: hsl(216, 41%, 61%);
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transition: opacity 0.4s ease, visibility 0.4s ease;
+  box-shadow:
+    inset calc(-0.2 * var(--neu-offset)) calc(-0.2 * var(--neu-offset)) var(--neu-blur) var(--neu-light),
+    inset var(--neu-offset) var(--neu-offset) var(--neu-blur) var(--neu-shadow);
+}
+.start-overlay.is-hidden {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  z-index: var(--z-below-ui);
+}
+.start-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 15px;
+}
+.start-hint {
+  margin: 0;
+  font-size: 16px;
+  color: #b0cfde;
+  letter-spacing: 0.3em;
+}
+.game-start-btn {
+  background: #8d3d23;
+  border-radius: 15px;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  box-shadow:
+    calc(-0.5 * var(--neu-offset-md)) calc(-0.5 * var(--neu-offset-md)) var(--neu-blur-md) var(--neu-light),
+    var(--neu-offset-md) var(--neu-offset-md) var(--neu-blur-md) var(--neu-shadow);
+}
+.btn-top {
+  display: block;
+  padding: 10px 100px;
+  border-radius: 15px;
+  background: #d6422e;
+  color: #fff;
+  font-weight: bold;
+  font-size: 20px;
+  transform: translateY(-6px);
+  transition: transform 0.1s ease;
+  box-shadow:
+    inset -4px -4px 10px rgba(255, 255, 255, 0.70),
+    inset  4px  4px 10px rgba(13, 39, 80, 0.12);
+}
+.game-start-btn:hover .btn-top { background: #c46035; }
+.game-start-btn:active .btn-top { transform: translateY(-2px); }
+
+.svg-defs {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.game-stage {
+  position: relative;
+  width: 100vw;
+  height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+/* กรอบล็อก — แผง host-bar อยู่ในระบบพิกัดเดียวกัน (ประตูเปิดเต็มจอแยกต่างหาก) */
+.lift-frame {
+  position: relative;
+  width: var(--lift-lock-w);
+  height: var(--lift-lock-h);
+  max-width: 100%;
+  max-height: 100%;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+/* ประตูเปิดฉากแรก — เต็มจอ (นอก lift-frame) */
+.game-stage > .door-wrapper-left,
+.game-stage > .door-wrapper-right {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* ทุก layer ยืดเต็มกรอบลิฟท์ */
+.elevator-container,
+.control-panel-container,
+.floor-indicator-container {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.elevator-container      { z-index: var(--z-elevator); }
+.control-panel-container {
+  z-index: var(--z-panel);
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.panel-frame {
+  position: relative;
+  container-type: inline-size;
+  aspect-ratio: var(--lift-lock-ratio);
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  transform-origin: center center;
+}
+.panel-frame > svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.floor-indicator-container {
+  z-index: var(--z-floor-indicator);
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.3s ease-in, visibility 0.3s ease-in;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.floor-indicator-container > svg {
+  width: 100%;
+  height: 100%;
+  flex-shrink: 0;
+}
+.floor-indicator-container.is-visible {
+  opacity: 1;
+  visibility: visible;
+}
+.floor-indicator-container,
+.floor-indicator-container * { pointer-events: none !important; }
+.door-wrapper-left,
+.door-wrapper-right {
+  z-index: var(--z-doors);
+  overflow: hidden;
+  pointer-events: none;
+}
+.door-wrapper-left  { clip-path: inset(0 50% 0 0); }   /* โชว์แค่ซีกซ้าย */
+.door-wrapper-right { clip-path: inset(0 0 0 50%); }   /* โชว์แค่ซีกขวา */
+
+/* เปิดประตูหลัง Start */
+body.doors-open .door-wrapper-left {
+  animation: slideOutLeft 1.2s ease-in-out forwards;
+  animation-delay: 0.3s;
+}
+body.doors-open .door-wrapper-right {
+  animation: slideOutRight 1.2s ease-in-out forwards;
+  animation-delay: 0.3s;
+}
+
+/* สั่นเฉพาะฉากข้างหลัง ไม่รวมประตู */
+body.doors-open .elevator-container {
+  animation: liftSettle 1.5s cubic-bezier(0.36, 0.07, 0.19, 0.97) forwards;
+  animation-delay: 0.6s;
+}
+ 
+@keyframes liftSettle {
+  0%   { transform: rotateZ(2deg); }
+  15%  { transform: rotateZ(-3deg); }
+  30%  { transform: rotateZ(3deg); }
+  45%  { transform: rotateZ(-0.1deg); }
+  60%  { transform: rotateZ(0.05deg); }
+  75%  { transform: rotateZ(-3deg); }
+  88%  { transform: rotateZ(2deg); }
+  100% { transform: rotateZ(0deg); }
+}
+@keyframes slideOutLeft {
+  from { transform: translateX(0); opacity: 1; visibility: visible; }
+  to   { transform: translateX(-100%); opacity: 0; visibility: hidden; }
+}
+@keyframes slideOutRight {
+  from { transform: translateX(0); opacity: 1; visibility: visible; }
+  to   { transform: translateX(100%); opacity: 0; visibility: hidden; }
+}
+
+svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.flash-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-flash);
+  opacity: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse at center,
+    transparent 80%,
+    rgb(255, 255, 255) 45%,
+    rgb(255, 245, 173) 75%
+  );
+}
+ 
+.flash-overlay.do-flash {
+  animation: edgeFlicker 1.7s ease-out forwards;
+  animation-delay: 0.3s;
+}
+ 
+@keyframes edgeFlicker {
+  0%   {
+    opacity: 0;
+    filter: blur(0px);
+    background: radial-gradient(ellipse at center,
+      transparent 80%,
+      rgba(255, 255, 255, 0.9) 55%,
+      rgba(255, 255, 255, 1) 100%
+    );
+  }
+  18%  {
+    opacity: 0.8;
+    filter: blur(3px);
+    background: radial-gradient(ellipse at center,
+      transparent 80%,
+      rgba(255, 255, 255, 0.95) 55%,
+      rgba(255, 255, 255, 1) 100%
+    );
+  }
+ 
+  /* หายไป */
+  22%  {
+    opacity: 0;
+    filter: blur(1px);
+  }
+  44%  {
+    opacity: 0.85;
+    filter: blur(14px);
+    background: radial-gradient(ellipse at center,
+      transparent 15%,
+      rgba(200, 230, 255, 0.8) 45%,
+      rgba(255, 255, 255, 0.9) 100%
+    );
+  }
+ 
+  /* หายไป */
+  55%  {
+    opacity: 0.5;
+    filter: blur(20px);
+    background: radial-gradient(ellipse at center,
+      transparent 10%,
+      rgba(180, 215, 255, 0.5) 40%,
+      rgba(255, 255, 255, 0.6) 100%
+    );
+  }
+  60%  {
+    opacity: 0.1;
+    filter: blur(28px);
+  }
+ 
+  /* หรี่ลง */
+  70%  {
+    opacity: 0.3;
+    filter: blur(6px);
+    background: rgba(20, 8, 91, 0.85);
+  }
+ 
+  /* สว่างคืน แล้วจบ */
+  80%  {
+    opacity: 0.3;
+    filter: blur(0px);
+    background: rgba(130, 168, 217, 0.7);
+  }
+ 100% {
+    opacity: 0;
+    filter: blur(0px);
+    background: rgba(220, 235, 255, 0.7);
+  }
+}
+
+.button-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-panel);
+  pointer-events: none;
+}
+
+.floor-btn {
+  position: absolute;
+  left: calc(var(--cx) / 396.92 * 100%);
+  top: calc(var(--cy) / 796.6 * 100%);
+  transform: translate(-50%, -50%);
+  width: calc(37 / 396.92 * 100%);
+  height: calc(37 / 796.6 * 100%);
+  background: transparent;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  pointer-events: auto;
+  touch-action: manipulation;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+  outline: none;
+  
+
+  /* Rubber button */
+  box-shadow:
+    0 calc(4 / 796.6 * 100cqh) calc(4 / 796.6 * 100cqh) 0 rgba(17, 6, 50, 0.3),
+    0 calc(6 / 796.6 * 100cqh) calc(8 / 796.6 * 100cqh) rgba(23, 1, 31, 0.2),
+    inset 0 calc(2 / 796.6 * 100cqh) calc(3 / 796.6 * 100cqh) rgba(255, 255, 255, 0.35),
+    inset 0 calc(-1 / 796.6 * 100cqh) calc(2 / 796.6 * 100cqh) rgba(7, 2, 47, 0.12);
+  transition:
+    transform 0.08s ease,
+    box-shadow 0.08s ease;
+  will-change: transform, box-shadow;
+}
+
+.floor-btn:not(.is-selected):hover {
+  transform: translate(-50%, calc(-50% - 1px));
+  box-shadow:
+    0 calc(6 / 796.6 * 100cqh) 0 0 rgba(17, 2, 62, 0.28),
+    0 calc(8 / 796.6 * 100cqh) calc(10 / 796.6 * 100cqh) rgba(17, 2, 62, 0.20),
+    inset 0 calc(2 / 796.6 * 100cqh) calc(3 / 796.6 * 100cqh) rgba(255, 255, 255, 0.4),
+    inset 0 calc(-1 / 796.6 * 100cqh) calc(2 / 796.6 * 100cqh) rgba(17, 2, 62, 0.10);
+}
+ 
+.floor-btn:active {
+  transform: translate(-50%, calc(-50% + 3px)) !important;
+  box-shadow:
+    0 calc(1 / 796.6 * 100cqh) 0 0 rgba(17, 2, 62, 0.28),
+    0 calc(2 / 796.6 * 100cqh) calc(4 / 796.6 * 100cqh) rgba(17, 2, 62, 0.15),
+    inset 0 calc(2 / 796.6 * 100cqh) calc(5 / 796.6 * 100cqh) rgba(17, 2, 62, 0.18),
+    inset 0 calc(1 / 796.6 * 100cqh) calc(2 / 796.6 * 100cqh) rgba(17, 2, 62, 0.10) !important;
+  transition: transform 0.05s ease, box-shadow 0.05s ease;
+}
+
+.floor-btn.is-selected {
+  transform: translate(-50%, calc(-50% + 2px));
+  box-shadow:
+    0 calc(2 / 796.6 * 100cqh) 0 0 rgba(17, 2, 62, 0.30),
+    0 calc(3 / 796.6 * 100cqh) calc(5 / 796.6 * 100cqh) rgba(17, 2, 62, 0.18),
+    inset 0 calc(2 / 796.6 * 100cqh) calc(5 / 796.6 * 100cqh) rgba(17, 2, 62, 0.15),
+    inset 0 0 calc(8 / 796.6 * 100cqh) rgba(255, 220, 100, 0.15);
+}
+ 
+.btn-face {
+  display: none; 
+}
+
+#n\.10,
+#n\.5,
+#n\.0 {
+  transition: opacity 0.25s ease, filter 0.25s ease;
+  pointer-events: none;
+}
+
+/* Hover — เรืองเบาๆ เมื่อเมาส์ผ่าน */
+#n\.10.is-hover,
+#n\.5.is-hover,
+#n\.0.is-hover {
+  filter: url(#btn-hover-filter) brightness(5);
+}
+
+/* Dimmed — ปุ่มที่ไม่ถูกเลือก */
+#n\.10.is-dimmed,
+#n\.5.is-dimmed,
+#n\.0.is-dimmed {
+  opacity: 0.6;
+  filter: none;
+}
+
+/* Selected — เรืองเต็ม + กระพริบหายใจ */
+#n\.10.is-selected,
+#n\.5.is-selected,
+#n\.0.is-selected {
+  opacity: 1;
+  filter: url(#btn-glow-filter);
+  animation: btn-breathe 2.2s ease-in-out infinite;
+}
+
+@keyframes btn-breathe {
+  0%, 100% { filter: url(#btn-glow-filter) brightness(1);   opacity: 1; }
+  50%       { filter: url(#btn-glow-filter) brightness(1.35); opacity: 1; }
+}
+.summit-btn {
+  position: absolute;
+  left: calc(var(--cx) / 396.92 * 100%);
+  top: calc(var(--cy) / 796.6 * 100%);
+  width: calc(var(--sw) / 396.92 * 100%);
+  height: calc(var(--sh) / 796.6 * 100%);
+  transform: translate(-50%, -50%);
+  background: #b44444;
+  border: none;
+  border-radius: 5px;
+  padding: 0;
+  cursor: pointer;
+  pointer-events: auto;
+  -webkit-tap-highlight-color: transparent;
+  outline: none;
+  overflow: visible;
+  box-shadow:
+    calc(-1 * var(--neu-offset-sm)) calc(-1 * var(--neu-offset-sm)) var(--neu-blur-sm) rgba(255, 255, 255, 0.75),
+    var(--neu-offset-sm) var(--neu-offset-sm) var(--neu-blur-sm) rgba(13, 39, 80, 0.22);
+}
+.summit-top {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  border-radius: 5px;
+  background: #df6563;
+  color: #fff;
+  font-weight: bold;
+  font-size: clamp(3px, 2.1cqi, 7px);
+  font-family: monospace;
+  letter-spacing: 0.06em;
+  line-height: 1;
+  transform: translateY(-18%);
+  transition: transform 0.1s ease, background 0.1s ease;
+  box-sizing: border-box;
+  box-shadow:
+    inset -3px -3px 8px rgba(255, 255, 255, 0.70),
+    inset  3px  3px 8px rgba(13, 39, 80, 0.15);
+}
+.summit-btn:not(:disabled):hover .summit-top {
+  background: #d88e87;
+}
+.summit-btn:not(:disabled):active .summit-top {
+  transform: translateY(-6%);
+}
+.summit-btn.is-submitted {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.summit-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.summit-btn:disabled .summit-top {
+  background: #c16a6a;
+}
+#summit,
+#summit-label {
+  opacity: 0;
+  pointer-events: none;
+}
+ 
+#arrows-group {
+  /* transition สำหรับเลื่อนขึ้นลงตามชั้น */
+  transition: translate 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+/* nudge animation — เขยิบเข้าออกวนลูป */
+@keyframes arrow-nudge {
+  0%         { transform: translateX(0px); }
+  30%        { transform: translateX(-4px); }
+  55%        { transform: translateX(-1.5px); }
+  75%        { transform: translateX(-3.5px); }
+  90%        { transform: translateX(-0.5px); }
+  100%       { transform: translateX(0px); }
+}
+ 
+#arrows-group.is-nudging {
+  animation: arrow-nudge 1.1s ease-in-out infinite;   
+}
+ 
+#direct2 {
+  opacity: 0.45;
+}
+ 
+/* === Control Panel Entrance + Float === */
+body.doors-open .panel-frame {
+  animation: panelEntrance 0.6s ease-out forwards;
+  animation-delay: 1.2s;
+}
+
+/* เล่น entrance ซ้ำเมื่อกลับหน้าโหวตรอบ 2+ */
+body.doors-open .panel-frame.vote-panel-replay {
+  animation: panelEntrance 0.6s ease-out forwards;
+  animation-delay: 0s;
+}
+
+@keyframes panelEntrance {
+  0%   { transform: scale(1) translateX(15px); }
+  50%  { transform: scale(0.75) translateX(10px); }
+  100% { transform: scale(var(--vote-panel-scale)) translateX(var(--vote-panel-shift-x)); }
+}
+
+/* === Door Close Overlay (SUMMIT) === */
+.door-close-container {
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-door-close);
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  --door-lift: -9px;
+}
+
+.door-close-container > svg,
+.frame-container > svg,
+.monitor-container > svg,
+.panel-numbers-container > svg,
+.direct-panel-container > svg,
+.cone-container > svg {
+  width: var(--lift-lock-w);
+  height: var(--lift-lock-h);
+  max-width: 100%;
+  max-height: 100%;
+  flex-shrink: 0;
+}
+
+.door-close-container > svg,
+.panel-numbers-container > svg,
+.cone-container > svg {
+  overflow: visible;
+}
+
+#door-close-left {
+  transform-origin: right center;
+  transform-box: fill-box;
+  transform: scaleX(0);
+}
+
+#door-close-right {
+  transform-origin: left center;
+  transform-box: fill-box;
+  transform: scaleX(0);
+}
+/* ลดความสูงในที่เดิม (x/width ไม่ขยับ) → ล็อกขนาดเล็กด้วย forwards */
+.door-close-container.is-shrinking #door-close-left {
+  transform: translateY(var(--door-lift));
+  animation: doorShrinkLeft 0.3s cubic-bezier(0.76, 0, 0.24, 1) forwards;
+}
+.door-close-container.is-shrinking #door-close-right {
+  transform: translateY(var(--door-lift));
+  animation: doorShrinkRight 0.3s cubic-bezier(0.76, 0, 0.24, 1) forwards;
+}
+
+@keyframes doorShrinkLeft {
+  from {
+    x: 199.45px;
+    y: 39.63px;
+    width: 168.45px;
+    height: 725.78px;
+  }
+  to {
+    x: 199.45px;
+    y: 116.91px;
+    width: 168.45px;
+    height: 648.5px;
+  }
+}
+@keyframes doorShrinkRight {
+  from {
+    x: 31px;
+    y: 39.63px;
+    width: 168.45px;
+    height: 725.78px;
+  }
+  to {
+    x: 31px;
+    y: 116.91px;
+    width: 168.45px;
+    height: 648.5px;
+  }
+}
+
+
+/* เมื่อ trigger → ยืดเข้ามา */
+.door-close-container.is-closing #door-close-left {
+  animation: doorCloseLeft 1.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+.door-close-container.is-closing #door-close-right {
+  animation: doorCloseRight 1.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+@keyframes doorCloseLeft {
+  from { transform: scaleX(0); }
+  to   { transform: scaleX(1); }
+}
+@keyframes doorCloseRight {
+  from { transform: scaleX(0); }
+  to   { transform: scaleX(1); }
+}
+
+.panel-frame.is-floating {
+  animation: panelFloat 1.9s ease-in-out infinite !important;
+}
+
+@keyframes panelFloat {
+  0%, 100% { transform: scale(var(--vote-panel-scale)) translateX(var(--vote-panel-shift-x)); }
+  50%       { transform: scale(var(--vote-panel-float-scale)) translateX(var(--vote-panel-shift-x)); }
+}
+
+/* หน้าโหวต: ซ่อนฉากลิฟท์เลื่อน แสดงแผง 3 ปุ่ม */
+body.doors-open:not(.is-arrived) .monitor-container,
+body.doors-open:not(.is-arrived) .panel-numbers-container,
+body.doors-open:not(.is-arrived) .direct-panel-container,
+body.doors-open:not(.is-arrived) .cone-container,
+body.doors-open:not(.is-arrived) .frame-container {
+  opacity: 0 !important;
+  visibility: hidden !important;
+}
+body.doors-open:not(.is-arrived) .control-panel-container {
+  opacity: 1 !important;
+  visibility: visible !important;
+  pointer-events: auto !important;
+}
+
+/* ซ่อน control panel */
+.control-panel-container.is-hidden {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.4s ease;
+}
+
+/* ขั้น 3: ล็อกขนาดเล็กจากขั้น 2 ก่อน scaleX หดกลับ (กันเด้งสูงเต็มบานใหญ่) */
+.door-close-container.is-opening #door-close-left {
+  x: 199.45px;
+  y: 116.91px;
+  width: 168.45px;
+  height: 648.5px;
+  transform: translateY(var(--door-lift)) scaleX(1);
+  transform-origin: right center;
+  transform-box: fill-box;
+  animation: doorOpenBackLeft 0.78s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+.door-close-container.is-opening #door-close-right {
+  x: 31px;
+  y: 116.91px;
+  width: 168.45px;
+  height: 648.5px;
+  transform: translateY(var(--door-lift)) scaleX(1);
+  transform-origin: left center;
+  transform-box: fill-box;
+  animation: doorOpenBackRight 0.78s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+@keyframes doorOpenBackLeft {
+  from { transform: translateY(var(--door-lift)) scaleX(1); }
+  to   { transform: translateY(var(--door-lift)) scaleX(0); }
+}
+@keyframes doorOpenBackRight {
+  from { transform: translateY(var(--door-lift)) scaleX(1); }
+  to   { transform: translateY(var(--door-lift)) scaleX(0); }
+}
+
+.frame-container {
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-frame);
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.4s ease, visibility 0.4s ease;
+}
+body.is-arrived .frame-container {
+  opacity: 1;
+  visibility: visible;
+}
+
+.monitor-container {
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-monitor);
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.4s ease, visibility 0.4s ease;
+  --monitor-scale: 0.8;     
+  --monitor-x: 48px;       
+  --monitor-y: 5px;        
+}
+.monitor-container .monitor-content {
+  transform-box: view-box;
+  transform-origin: 192px 70px;   
+  transform: translate(var(--monitor-x), var(--monitor-y)) scale(var(--monitor-scale));
+}
+
+/* === needle === */
+#needle-pivot {
+  transform-origin:  0 0;
+  transition: transform 0.4s linear;
+}
+
+/* === 7-segment display in monitor === */
+.seg-poly {
+  transition: fill 0.06s ease, opacity 0.06s ease;
+}
+.seg-off {
+  fill: rgba(96, 57, 19, 0.05);
+}
+.seg-on {
+  fill: #577357;
+}
+
+body.is-arrived .monitor-container {
+  opacity: 1;
+  visibility: visible;
+}
+
+.panel-numbers-container {
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-panel-numbers);
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.4s ease, visibility 0.4s ease;
+}
+body.is-arrived .panel-numbers-container {
+  opacity: 1;
+  visibility: visible;
+}
+
+.panel-numbers-container .floor-light circle {
+  fill: #fff47d;
+  filter:
+    drop-shadow(0 0 2px #e1b515)
+    drop-shadow(0 0 6px   #ffcb55);
+  animation: panelBreathe 0.4s ease-in-out infinite;
+  transition: fill 0.35s ease, filter 0.35s ease;
+}
+@keyframes panelBreathe {
+  0%, 100% { opacity: 0.8; }
+  50%      { opacity: 1;    }
+}
+
+/* ชั้นที่ลิฟต์อยู่ — แดงประกาย */
+.panel-numbers-container .floor-light.is-lit circle {
+  fill: #ea5a5a;
+  filter:
+    drop-shadow(0 0 1px  #ffb0b0)
+    drop-shadow(0 0 3px  #e3718e)
+    drop-shadow(0 0 8px #b2405f);
+  animation: panelSparkle 1.3s ease-in-out infinite;
+}
+@keyframes panelSparkle {
+  0%, 100% { opacity: 0.85; }
+  50%      { opacity: 1;    }
+}
+
+/* === Direct panel: กล่อง + คน + ลูกศร === */
+.direct-panel-container {
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-direct-panel);
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.4s ease, visibility 0.4s ease;
+  filter:
+    drop-shadow(-6px -6px 14px rgba(255, 255, 233, 0.8))
+    drop-shadow( 6px  6px 14px rgba(13, 39, 80, 0.15));
+}
+body.is-arrived .direct-panel-container {
+  opacity: 1;
+  visibility: visible;
+}
+
+.direct-panel-container .direct-panel-wrap {
+  --direct-step: 0;
+  transform: translateY(calc(var(--direct-step) * -54.16px));
+  transition: transform 1s ease-in-out;
+}
+
+/* ====== Idle: กล่องลอยขึ้น-ลงเล็กๆ====== */
+@keyframes dpBoxFloat {
+  0%, 100% { transform: translateY(-3px); }
+  50%      { transform: translateY(0px); }
+}
+.direct-panel-container .dp-box {
+  animation: dpBoxFloat 1.2s ease-in-out infinite;
+}
+
+.direct-panel-container .BoxShadow {
+  --shadow-shrink: 0.95;  
+  --shadow-expand: 1.05;   
+
+  transform-box: view-box;
+  transform-origin: 425px 641px;  
+  animation: dpBoxShadowAnim 1.8s ease-in-out infinite;
+}
+@keyframes dpBoxShadowAnim {
+  0%, 100% { transform: translateY(-3px) scale(var(--shadow-shrink)); }
+  50%      { transform: translateY(0px)  scale(var(--shadow-expand)); }
+}
+
+/* ====== Idle: คนยกขึ้นนิด + ลอยช้าๆ ====== */
+@keyframes dpManFloat {
+  0%, 100% { transform: translateY(-3px); }
+  50%      { transform: translateY(-18px); }
+}
+.direct-panel-container .dp-man {
+  animation: dpManFloat 2.5s ease-in-out infinite;
+}
+
+.cone-container {
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-cone);
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.4s ease, visibility 0.4s ease;
+  --cone-x: 342px;         
+  --cone-y-top: 185px;      
+  --cone-step-h: 54.16px;
+  filter:
+    drop-shadow(-4px -4px 10px rgba(255, 255, 255, 0.28))
+    drop-shadow( 4px  4px 10px rgba(13, 39, 80, 0.16));
+}
+
+body.is-arrived .cone-container {
+  opacity: 1;
+  visibility: visible;
+  animation: coneBounceIn 0.7s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+@keyframes coneBounceIn {
+  0%   { transform: translateY(80px); }   
+  100% { transform: translateY(0); }     
+}
+
+.cone-marker {
+  --step: 0;
+  transform-box: view-box;
+  transform-origin: 0 0;
+  transform:
+    translate(
+      var(--cone-x),
+      calc(var(--cone-y-top) + var(--step) * var(--cone-step-h))
+    );
+  transition: transform 0.9s cubic-bezier(0.76, 0, 0.24, 1);
+}
+
+/* === Multiplayer overlays === */
+
+/* พื้นหลังทับจอเต็มจอ (หน้า lobby ทุกหน้า) */
+.mp-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-lobby);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(149, 168, 206, 0.6);
+  backdrop-filter: blur(4px);
+}
+/* ซ่อน overlay */
+.mp-overlay.is-hidden {
+  display: none;
+}
+
+/* ค่าเริ่มต้น lobby — ใช้กับ #entry-overlay และ #host-pin-overlay เท่านั้น */
+.lobby-card {
+  background: #a5c4f0;
+  border: none;
+  border-radius: 24px;
+  padding: 2rem 2rem;
+  max-width: 200px;
+  width: 90%;
+  text-align: center;
+  box-shadow: 2px 2px 1px #e4e4e460, -1px -1px 1px #fafafab1;
+}
+
+/* หัวข้อการ์ด */
+.lobby-title {
+  margin: 0 0 0.1rem;
+  font-size: 2rem;
+  font-weight: 1000;
+  color: #ffffff;
+}
+/* คำอธิบายใต้หัวข้อ (เช่น เลือกบทบาทของคุณ) */
+.lobby-hint {
+  margin: 0 0 1rem;
+  color: #051021;
+  font-size: 0.8rem;
+}
+
+@keyframes breathe-glow {
+  0%, 100% {
+    box-shadow: inset 3px 3px 7px #f5f5f5, inset -3px -3px 7px #034603,
+                0 0 6px rgba(12, 224, 44, 0.4);
+  }
+  50% {
+    box-shadow: inset 3px 3px 7px #b8bec9, inset -3px -3px 7px #090101,
+                0 0 18px rgba(146, 224, 12, 0.85),
+                0 0 32px rgba(12, 224, 44, 0.35);
+  }
+}
+
+.server-status {
+  margin: 0 0 1.25rem;
+  padding: 0.5rem 0.5rem;
+  font-size: 0.8rem;
+  border-radius: 50px;
+  line-height: 1.4;
+  background: #0ce02c;
+  color: #fdfdfd;
+  box-shadow: inset 3px 3px 7px #b8bec9, inset -3px -3px 7px #ffffff;
+  animation: breathe-glow 2.5s ease-in-out infinite;
+}
+/* สีข้อความ — เชื่อมต่อแล้ว / error */
+.server-status-ok  { color: #ddece4; }
+.server-status-bad { color: #c0392b; }
+
+/* ช่องกรอก PIN กว้างเต็มการ์ด */
+.lobby-input-wide {
+  width: 100%;
+  margin-bottom: 0.75rem;
+  box-sizing: border-box;
+}
+/* หน้า Host dashboard (#host-dash-overlay) — ทั้งการ์ด */
+#host-dash-overlay .lobby-card {
+  background: #dae6f8;
+  border: none;
+  border-radius: 24px;
+  padding: 2rem 2rem;
+  max-width: 300px;
+  width: 90%;
+  text-align: center;
+  box-shadow: 1px 1px 2px #b8bec9, -1px -1px 2px #ffffff;
+}
+#host-dash-overlay .lobby-title {
+  margin: 0 0 0.25rem;
+  font-size: 4rem;
+  font-weight: 700;
+  color: #4482ec;
+}
+#host-dash-overlay .lobby-room-label {
+  margin: 0 0 0.75rem;
+  font-size: 1rem;
+  color: #3d4550;
+}
+#host-dash-overlay .lobby-room-code {
+  font-size: 4rem;
+  font-weight: 1000;
+  letter-spacing: 0.22em;
+  color: #c2340d;
+  font-family: 'Courier New', monospace;
+  margin: 0 0 1rem;
+}
+#host-dash-overlay .lobby-status {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  background: #e0e5ec;
+  border-radius: 20px;
+  box-shadow: 3px 3px 8px #b8bec9, -3px -3px 8px #ffffff;
+  padding: 8px 20px;
+  font-size: 0.82rem;
+  color: #908907;
+  margin: 0 0 1.25rem;
+}
+#host-dash-overlay .lobby-hint {
+  font-size: 0.8rem;
+  color: #8a9bb5;
+  margin: 0 0 1.25rem;
+}
+#host-dash-overlay .lobby-btn-primary {
+  width: 100%;
+  max-width: 150px;
+  margin: 0 auto;
+  display: block;
+  padding: 0.8rem 1rem;
+  font-size: 1rem;
+  font-weight: 700;
+  border: none;
+  border-radius: 50px;
+  background: linear-gradient(145deg, #ed8823, #d3b703);
+  color: #130303;
+  cursor: pointer;
+  box-shadow: 5px 5px 12px #b8bec9, -3px -3px 8px #ffffff;
+  letter-spacing: 0.03em;
+  transition: box-shadow 0.15s ease, transform 0.1s ease;
+}
+#host-dash-overlay .lobby-btn-primary:hover {
+  box-shadow: 7px 7px 16px #b0b6c2, -4px -4px 10px #ffffff;
+}
+#host-dash-overlay .lobby-btn-primary:active {
+  transform: scale(0.97);
+  box-shadow: inset 3px 3px 8px rgba(0, 0, 0, 0.12), inset -2px -2px 6px rgba(255, 255, 255, 0.2);
+}
+
+/* === Player Join — กรอกรหัสห้อง (#player-join-overlay) === */
+#player-join-overlay .lobby-card {
+  background: #fff1d4;
+  border: none;
+  border-radius: 20px;
+  padding: 2rem 2rem;
+  max-width: 300px;
+  width: 90%;
+  text-align: center;
+  box-shadow: 2px 2px 4px #ffebc4, -2px -2px 4px #fcf59b;
+}
+#player-join-overlay .lobby-title {
+  margin: 0 0 0.25rem;
+  font-size: 2rem;
+  font-weight: 700;
+  color: #2088ff;
+}
+#player-join-overlay .lobby-hint {
+  font-size: 0.85rem;
+  color: #000000;
+  margin: 0 0 1rem;
+}
+#player-join-overlay .lobby-field-error {
+  font-size: 0.82rem;
+  color: #c0392b;
+  margin: 0 0 0.5rem;
+  font-weight: 600;
+}
+#player-join-overlay .lobby-join-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+#player-join-overlay .lobby-input {
+  flex: 1;
+  padding: 0.65rem 0.75rem;
+  font-size: 1rem;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  text-align: center;
+  border: none;
+  border-radius: 12px;
+  background: #e0e5ec;
+  color: #3d4f6e;
+  box-shadow: inset 4px 4px 10px #b8bec9, inset -4px -4px 10px #ffffff;
+  outline: none;
+  font-family: 'Courier New', monospace;
+}
+#player-join-overlay .lobby-btn-primary {
+  padding: 0.65rem 1rem;
+  font-size: 0.95rem;
+  font-weight: 700;
+  border: none;
+  border-radius: 50px;
+  background: linear-gradient(145deg, #f6512c, #ed5226);
+  color: #ffffff;
+  cursor: pointer;
+  box-shadow: 2px 2px 2px #c9370b, -2px -2px 2px #fa8d8d;
+  white-space: nowrap;
+  transition: box-shadow 0.15s ease, transform 0.1s ease;
+}
+#player-join-overlay .lobby-btn-primary:active {
+  transform: scale(0.97);
+  box-shadow: inset 3px 3px 8px rgba(0, 0, 0, 0.12), inset -2px -2px 6px rgba(255, 255, 255, 0.2);
+}
+/* ปุ่มย้อนกลับเท่านั้น — .lobby-btn ทั่วไปทับปุ่มเข้าร่วม (มี 2 class) */
+#player-join-overlay #player-join-back {
+  margin-top: 0.25rem;
+  padding: 0.4rem 1.5rem;
+  font-size: 0.85rem;
+  border: none;
+  border-radius: 50px;
+  background: #e0e5ec;
+  color: #8a9bb5;
+  cursor: pointer;
+  box-shadow: 4px 4px 10px #b8bec9, -4px -4px 10px #ffffff;
+  transition: box-shadow 0.15s ease, transform 0.1s ease;
+}
+#player-join-overlay #player-join-back:active {
+  transform: scale(0.97);
+  box-shadow: inset 3px 3px 8px #b8bec9, inset -3px -3px 8px #ffffff;
+}
+
+/* === Player Joined — รอ Host (#player-joined-overlay) === */
+#player-joined-overlay .lobby-card {
+  background: #e0e5ec;
+  border: none;
+  border-radius: 24px;
+  padding: 2rem 2rem;
+  max-width: 320px;
+  width: 90%;
+  text-align: center;
+  box-shadow: 4px 4px 5px #b8bec9, -4px -4px 5px #ffffff;
+}
+#player-joined-overlay .lobby-title {
+  margin: 0 0 0.75rem;
+  font-size: 3rem;
+  font-weight: 700;
+  color: #3d4f6e;
+}
+#player-joined-overlay .lobby-room-code {
+  font-size: 2.4rem;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  color: #3a9ab8;
+  font-family: 'Courier New', monospace;
+  margin: 0 0 0.75rem;
+}
+#player-joined-overlay .lobby-hint {
+  font-size: 0.82rem;
+  color: #8a9bb5;
+  margin: 0;
+}
+
+/* จัดเรียงปุ่มในการ์ด (แนวตั้ง) */
+.lobby-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+/* กลุ่มช่องกรอก + ข้อความ error (PIN / รหัสห้องผิด) */
+.lobby-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-bottom: 0.25rem;
+}
+
+/* ข้อความ error ใต้ช่องกรอก */
+.lobby-field-error {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #c0392b;
+  text-align: center;
+}
+.lobby-field-error.is-hidden {
+  display: none;
+}
+
+/* ช่องกรอกผิด — กรอบแดง */
+.lobby-input.is-invalid {
+  box-shadow: inset 4px 4px 10px #b8bec9, inset -4px -4px 10px #ffffff,
+              0 0 0 2px rgba(192, 57, 43, 0.4);
+}
+
+/* ช่องกรอก PIN / รหัสห้อง */
+.lobby-input {
+  flex: 1;
+  padding: 0.6rem 0.75rem;
+  font-size: 1.1rem;
+  text-transform: uppercase;
+  border: none;
+  border-radius: 10px;
+  background: #e0e5ec;
+  color: #b13e3e;
+  box-shadow: inset 4px 4px 10px #b8bec9, inset -4px -4px 10px #ffffff;
+  outline: none;
+}
+
+/* ปุ่มเข้าร่วมและสร้างห้อง */
+.lobby-btn {
+  padding: 0.75rem 1rem;
+  font-size: 1rem;
+  font-weight: 100;
+  border: none;
+  border-radius: 100px;
+  background: #eea004;
+  color: #0a346f;
+  cursor: pointer;
+  box-shadow: 2px 2px 2px #b8bec9, -2px -2px 2px #ffffff;
+  transition: box-shadow 0.15s ease, transform 0.1s ease;
+}
+.lobby-btn:hover {
+  box-shadow: 1px 1px 1px #b0b6c2, -1px -1px 1px #ffffff;
+}
+.lobby-btn:active {
+  transform: scale(0.94);
+  box-shadow: inset 4px 4px 10px #b8bec9, inset -2px -2px 1px #ffffff;
+}
+
+/* ปุ่มหลัก (Host / สร้างห้อง / Go) */
+.lobby-btn-primary {
+  background: linear-gradient(145deg, #ca1006, #af3201);
+  color: #e3d9d9;
+  box-shadow: 2px 2px 1px #b8bec9, -2px -2px 6px #ffffff;
+}
+.lobby-btn-primary:hover {
+  box-shadow: 7px 7px 16px #b0b6c2, -4px -4px 10px #ffffff;
+}
+.lobby-btn-primary:active {
+  box-shadow: inset 3px 3px 8px rgba(0,0,0,0.15), inset -2px -2px 6px rgba(255,255,255,0.2);
+}
+
+/* หน้า Host กรอกรหัส (#host-pin-overlay) — แยกจากปุ่ม lobby หน้าอื่น */
+#host-pin-overlay #host-pin-submit {
+  background: linear-gradient(145deg, #f38d20, #d0cd19);
+  color: #fff;
+  box-shadow: 2px 2px 2px #c4a07a, -2px -2px 4px #ffffff;
+}
+#host-pin-overlay #host-pin-submit:hover {
+  box-shadow: 3px 3px 6px #b8926a, -2px -2px 5px #ffffff;
+}
+#host-pin-overlay #host-pin-submit:active {
+  box-shadow: inset 2px 2px 6px rgba(0, 0, 0, 0.2), inset -1px -1px 4px rgba(255, 255, 255, 0.25);
+}
+#host-pin-overlay #host-pin-back {
+  padding: 0.3rem 1rem;
+  font-size: 0.7rem;
+  font-weight: 400;
+  background: #ffffff;
+  color: #6b7f9a;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+  align-self: center;
+  width: auto;
+  min-width: 0;
+}
+#host-pin-overlay #host-pin-back:hover {
+  background: #f8fafc;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.15);
+}
+#host-pin-overlay #host-pin-back:active {
+  transform: scale(0.96);
+  box-shadow: inset 1px 1px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* === แถบควบคุม Host — ล็อกกรอบลิฟท์ (อยู่นอก .game-stage เพื่อ z-index ทำงาน) === */
+#host-bar {
+  /* ตำแหน่ง */
+  --host-info-top: 14px;
+  --host-info-left: 18px;
+  --host-exit-top: 14px;
+  --host-exit-right: 22px;
+  --host-next-bottom: 50px;
+  --host-speed-gap: 6px;
+  /* ขนาด */
+  --host-info-padding: 2px 10px;
+  --host-info-radius: 40px;
+  --host-label-size: 9px;
+  --host-value-size: 16px;
+  --host-sep-height: 14px;
+  --host-sep-margin: 0 2px;
+  --host-exit-size: 40px;
+  --host-exit-icon-size: 15px;
+  --host-exit-label-gap: 2px;
+  --host-exit-label-color: #fff;
+  --host-next-padding: 0.5rem 2rem;
+  --host-next-font: 1rem;
+  --host-next-radius: 50px;
+
+  position: fixed;
+  inset: 0;
+  margin: auto;
+  width: var(--lift-lock-w);
+  height: var(--lift-lock-h);
+  max-width: 100%;
+  max-height: 100%;
+  aspect-ratio: var(--lift-lock-ratio);
+  pointer-events: none;
+  z-index: var(--z-host-bar);
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 0.15s ease, visibility 0.15s ease;
+}
+
+#host-bar.is-hidden {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* ซ้ายบน: host-bar-info + ปุ่มความเร็วใต้ info */
+#host-bar .host-bar-top-left {
+  position: absolute;
+  top: var(--host-info-top);
+  left: var(--host-info-left);
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--host-speed-gap);
+  pointer-events: none;
+}
+
+#host-bar .host-bar-info {
+  pointer-events: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0;
+  max-width: min(88vw, 17.5rem);
+  background: #e0e5ec;
+  border-radius: var(--host-info-radius);
+  box-shadow: 2px 2px 4px #b8bec9, -2px -2px 4px #ffffff;
+  padding: var(--host-info-padding);
+}
+
+#host-bar .lift-speed-btn {
+  pointer-events: auto;
+  position: relative;
+  z-index: 1;
+  min-width: 2.35rem;
+  padding: 0.32rem 0.62rem;
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  border-radius: 999px;
+  background: rgba(224, 229, 236, 0.94);
+  color: #2e3192;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  box-shadow: 2px 2px 5px rgba(8, 30, 66, 0.16), -1px -1px 3px rgba(255, 255, 255, 0.85);
+  transition: background 0.15s ease, transform 0.1s ease;
+}
+#host-bar .lift-speed-btn.is-fast {
+  background: linear-gradient(145deg, #f5d76e, #e8b800);
+  color: #5a4200;
+  border-color: rgba(255, 255, 255, 0.7);
+}
+#host-bar .lift-speed-btn:hover {
+  transform: translateY(-1px);
+}
+#host-bar .lift-speed-btn:active {
+  transform: scale(0.96);
+}
+#host-bar .lift-speed-btn.is-hidden {
+  display: none;
+}
+
+#host-bar .hbi-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+}
+
+#host-bar .hbi-label {
+  font-size: var(--host-label-size);
+  color: #8a9bb5;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-family: 'Segoe UI', sans-serif;
+}
+
+#host-bar .hbi-value {
+  font-size: var(--host-value-size);
+  font-weight: 500;
+  color: #3d4f6e;
+  font-family: 'Courier New', monospace;
+  letter-spacing: 0.08em;
+}
+
+#host-bar .hbi-value-floor {
+  color: #3a9ab8;
+}
+
+#host-bar .hbi-value-vote {
+  color: #c2340d;
+  font-weight: 700;
+}
+
+#host-bar .hbi-sep {
+  display: inline-block;
+  width: 1px;
+  height: var(--host-sep-height);
+  background: #c8d0dc;
+  margin: var(--host-sep-margin);
+}
+
+#host-bar .host-exit-wrap {
+  pointer-events: none;
+  position: absolute;
+  top: var(--host-exit-top);
+  right: var(--host-exit-right);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--host-exit-label-gap);
+}
+
+#host-bar #host-btn-exit {
+  pointer-events: all;
+  width: var(--host-exit-size);
+  height: var(--host-exit-size);
+  border-radius: 50%;
+  border: none;
+  background: #90100e;
+  color: #ebf1fa;
+  font-size: 0;
+  cursor: pointer;
+  outline: none;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.12s ease, box-shadow 0.12s ease;
+}
+
+#host-bar #host-btn-exit::before {
+  content: '✕';
+  font-size: var(--host-exit-icon-size);
+  color: #f4f8ff;
+  transition: color 0.12s ease;
+}
+
+#host-bar #host-btn-exit:hover::before {
+  color: #000;
+}
+
+#host-bar #host-btn-exit:active {
+  background: #6e0c0a;
+  box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.5);
+}
+
+#host-bar #host-btn-exit:focus-visible {
+  outline: 2px solid rgba(0, 0, 0, 0.45);
+  outline-offset: 2px;
+}
+
+#host-bar #host-btn-exit:focus-visible::before {
+  color: #000;
+}
+
+#host-bar #host-btn-exit:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+#host-bar .host-exit-label {
+  font-size: var(--host-label-size);
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: var(--host-exit-label-color);
+  font-family: 'Segoe UI', sans-serif;
+}
+
+#host-bar #host-btn-next {
+  pointer-events: all;
+  position: absolute;
+  bottom: var(--host-next-bottom);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: var(--host-next-padding);
+  font-size: var(--host-next-font);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  border: none;
+  border-radius: var(--host-next-radius);
+  background: linear-gradient(145deg, #f5d76e, #e8b800);
+  color: #6b4c00;
+  cursor: pointer;
+  box-shadow: 5px 5px 14px #b8bec9, -3px -3px 8px #ffffff;
+  white-space: nowrap;
+  transition: box-shadow 0.15s, transform 0.1s;
+}
+
+#host-bar #host-btn-next:hover {
+  box-shadow: 7px 7px 18px #b0b6c2, -4px -4px 10px #ffffff;
+}
+
+#host-bar #host-btn-next:active {
+  transform: translateX(-50%) scale(0.96);
+  box-shadow: inset 3px 3px 8px rgba(0, 0, 0, 0.12), inset -2px -2px 6px rgba(255, 255, 255, 0.3);
+}
+
+#host-bar #host-btn-next:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* แถบแจ้งเตือนลอย */
+.host-toast {
+  position: fixed;
+  top: 4rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: var(--z-toast);
+  max-width: 90vw;
+  padding: 0.6rem 1rem;
+  background: #2e3192;
+  color: #fff;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  text-align: center;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+}
+
+.host-toast.is-hidden {
+  display: none;
+}
+
+.host-toast--error {
+  background: #322626;
+  color: #fff;
+  border: 2px solid #7f1d1d;
+}
+
+/* popup ผลรอบ — ขนาด + สไตล์การ์ด */
+#result-overlay .lobby-card-result {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.65rem;
+  width: min(78vw, 248px);
+  max-width: none;
+  min-height: 13.5rem;
+  padding: 1.65rem 1.25rem 1.35rem;
+  border-radius: 22px;
+  background: rgba(184, 212, 255, 0.6);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  box-shadow: 0 6px 24px rgba(8, 20, 40, 0.18);
+  box-sizing: border-box;
+}
+
+/* popup ผลรอบลิฟท์ — ตัวเลขชั้น */
+#result-overlay .result-floor {
+  font-size: 3.1rem;
+  font-weight: 900;
+  color: #7f1b05;
+  margin: 0.35rem 0;
+  line-height: 1;
+}
+
+/* popup ผลรอบ — หัวข้อ + ยอดรวม */
+#result-overlay .result-label,
+#result-overlay .result-total {
+  margin: 0;
+  font-size: 1rem;
+  line-height: 1.4;
+  color: #603913;
+}
+
+/* popup ผลรอบ — ปุ่มปิด ยืดกว้าง */
+#result-overlay #result-close-btn.lobby-btn {
+  display: block;
+  margin: 0.85rem 0 0;
+  width: 92%;
+  max-width: 13rem;
+  padding: 0.65rem 2.25rem;
+  font-size: 0.95rem;
+  font-weight: 700;
+  border-radius: 999px;
+  box-shadow: 2px 2px 4px #b8bec9, -2px -2px 4px #ffffff;
+  cursor: pointer;
+  pointer-events: auto;
+}
+#result-overlay #result-close-btn.lobby-btn:hover {
+  box-shadow: 3px 3px 6px #b0b6c2, -2px -2px 5px #ffffff;
+}
+#result-overlay #result-close-btn.lobby-btn:active {
+  transform: scale(0.97);
+  box-shadow: inset 3px 3px 8px rgba(0, 0, 0, 0.12), inset -2px -2px 6px rgba(255, 255, 255, 0.2);
+}
+
+/* popup ผลรอบ — พื้นหลังทับจอไม่เบลอ */
+#result-overlay.mp-overlay {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+/* popup ผลรอบ — ให้คลิกการ์ดได้ */
+#result-overlay .lobby-card {
+  pointer-events: auto;
+}
+
+/* จอดำ GAME OVER */
+.game-over-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-game-over);
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(1.5rem, 6vw, 3rem);
+  box-sizing: border-box;
+  pointer-events: auto;
+}
+.game-over-overlay.is-hidden {
+  display: none;
+}
+
+/* ข้อความ GAME OVER — กลางจอ ไม่ชิดขอบ ตัวเล็กลง */
+.game-over-text {
+  margin: 0 auto;
+  color: #ff2222;
+  font-family: system-ui, sans-serif;
+  font-size: clamp(1.6rem, 7vw, 3.25rem);
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  text-align: center;
+  line-height: 1.15;
+  max-width: min(88vw, 20rem);
+  text-shadow: 0 0 32px rgba(255, 40, 40, 0.55);
+}
+/* พื้นมืด — overlay อื่นที่ใช้ mp-overlay-dim */
+.mp-overlay-dim {
+  background: rgba(10, 20, 40, 0.4);
+}
