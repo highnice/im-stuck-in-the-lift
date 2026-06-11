@@ -25,7 +25,12 @@ app.use(
 );
 
 const HOST_PIN = process.env.HOST_PIN || '!yeswecan';
+const HOST_GRACE_MS = 5 * 60 * 1000;
 const rooms = new Map();
+
+function generateHostToken() {
+  return `h_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+}
 
 function generateCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -47,6 +52,41 @@ function countVotes(room) {
   let n = [...room.players.values()].filter((p) => p.hasVoted).length;
   if (room.hostHasVoted) n += 1;
   return n;
+}
+
+function joinPayload(room, { isHost, playerId, includeHostToken } = {}) {
+  const payload = { ...publicRoom(room), isHost: !!isHost };
+  if (isHost && includeHostToken) payload.hostToken = room.hostToken;
+  if (isHost && room.hostHasVoted) payload.myVote = room.hostVote;
+  if (!isHost && playerId) {
+    const p = room.players.get(playerId);
+    if (p?.hasVoted) payload.myVote = p.vote;
+  }
+  return payload;
+}
+
+function attachPlayer(room, playerId, socket) {
+  const existing = room.players.get(playerId);
+  if (existing) {
+    existing.socketId = socket.id;
+    return existing;
+  }
+  const player = { hasVoted: false, vote: null, socketId: socket.id };
+  room.players.set(playerId, player);
+  return player;
+}
+
+function detachPlayer(room, playerId, socketId) {
+  const player = room.players.get(playerId);
+  if (!player) return;
+  // มี socket ใหม่เชื่อมแล้ว — อย่าตัดการเชื่อมซ้ำ
+  if (player.socketId && player.socketId !== socketId) return;
+  // โหวตแล้วหรือเกมเริ่มแล้ว — เก็บไว้นับคะแนน (เน็ตมือถือหลุดชั่วคราว)
+  if (player.hasVoted || room.phase !== 'lobby') {
+    player.socketId = null;
+    return;
+  }
+  room.players.delete(playerId);
 }
 
 function publicRoom(room) {
@@ -173,6 +213,8 @@ const ERR = {
   useNext: 'กด NEXT ก่อน',
   ended: 'จบเกมแล้ว',
   notVoting: 'ยังไม่ถึงการโหวต',
+  notInRoom: 'ไม่อยู่ในห้อง — เข้าห้องใหม่',
+  hostAway: 'Host หลุดชั่วคราว — รอ Host กลับ',
 };
 
 function emitErr(socket, code) {
@@ -195,6 +237,8 @@ io.on('connection', (socket) => {
     const room = {
       code,
       hostId: socket.id,
+      hostToken: generateHostToken(),
+      hostGraceTimer: null,
       phase: 'lobby',
       round: 0,
       currentFloor: 'G',
@@ -209,10 +253,33 @@ io.on('connection', (socket) => {
     socket.join(code);
     socket.data.roomCode = code;
     socket.data.isHost = true;
-    socket.emit('room:joined', { ...publicRoom(room), isHost: true });
+    socket.emit('room:joined', joinPayload(room, { isHost: true, includeHostToken: true }));
   });
 
-  socket.on('room:join', ({ code }) => {
+  socket.on('room:resume', ({ code, hostToken }) => {
+    const room = rooms.get(String(code || '').toUpperCase().trim());
+    if (!room || room.hostToken !== String(hostToken || '')) {
+      emitErr(socket, 'noRoom');
+      return;
+    }
+    if (room.phase === 'game_over') {
+      emitErr(socket, 'roomEnded');
+      return;
+    }
+    if (room.hostGraceTimer) {
+      clearTimeout(room.hostGraceTimer);
+      room.hostGraceTimer = null;
+    }
+    room.hostId = socket.id;
+    socket.join(room.code);
+    socket.data.roomCode = room.code;
+    socket.data.isHost = true;
+    socket.emit('room:joined', joinPayload(room, { isHost: true, includeHostToken: true }));
+    io.to(room.code).emit('host:back', { message: 'Host กลับมาแล้ว' });
+    io.to(room.code).emit('room:update', publicRoom(room));
+  });
+
+  socket.on('room:join', ({ code, playerId }) => {
     const room = rooms.get(String(code || '').toUpperCase().trim());
     if (!room) {
       emitErr(socket, 'noRoom');
@@ -222,18 +289,22 @@ io.on('connection', (socket) => {
       emitErr(socket, 'roomEnded');
       return;
     }
+    const pid = String(playerId || socket.id).trim();
     socket.join(room.code);
     socket.data.roomCode = room.code;
     socket.data.isHost = false;
-    room.players.set(socket.id, { hasVoted: false, vote: null });
-    socket.emit('room:joined', { ...publicRoom(room), isHost: false });
+    socket.data.playerId = pid;
+    attachPlayer(room, pid, socket);
+    socket.emit('room:joined', joinPayload(room, { isHost: false, playerId: pid }));
     io.to(room.code).emit('room:update', publicRoom(room));
   });
 
   socket.on('game:go', (_payload, ack) => {
     const room = getRoom(socket);
-    if (!room || room.hostId !== socket.id) {
-      if (typeof ack === 'function') ack({ ok: false, code: 'notHost', message: ERR.notHost });
+    if (!room || !room.hostId || room.hostId !== socket.id) {
+      const code = !room?.hostId ? 'hostAway' : 'notHost';
+      const message = ERR[code];
+      if (typeof ack === 'function') ack({ ok: false, code, message });
       return;
     }
     if (room.phase !== 'lobby') {
@@ -279,14 +350,19 @@ io.on('connection', (socket) => {
       return;
     }
 
-    const player = room.players.get(socket.id);
-    if (!player) return;
+    const playerId = socket.data.playerId;
+    const player = playerId ? room.players.get(playerId) : null;
+    if (!player) {
+      emitErr(socket, 'notInRoom');
+      return;
+    }
     if (player.hasVoted) {
       emitErr(socket, 'voted');
       return;
     }
     player.hasVoted = true;
     player.vote = v;
+    player.socketId = socket.id;
     socket.emit('vote:locked', { vote: v });
     io.to(room.code).emit('room:update', publicRoom(room));
   });
@@ -385,9 +461,13 @@ io.on('connection', (socket) => {
 
   socket.on('game:end', () => {
     const room = getRoom(socket);
-    if (!room || room.hostId !== socket.id) {
-      emitErr(socket, 'notHost');
+    if (!room || !room.hostId || room.hostId !== socket.id) {
+      emitErr(socket, room && !room.hostId ? 'hostAway' : 'notHost');
       return;
+    }
+    if (room.hostGraceTimer) {
+      clearTimeout(room.hostGraceTimer);
+      room.hostGraceTimer = null;
     }
     clearVotes(room);
     room.phase = 'game_over';
@@ -400,12 +480,19 @@ io.on('connection', (socket) => {
     if (!room) return;
 
     if (socket.id === room.hostId) {
-      io.to(room.code).emit('room:closed', { message: 'Host ออกจากห้องแล้ว' });
-      rooms.delete(room.code);
+      room.hostId = null;
+      io.to(room.code).emit('host:away', { message: 'Host หลุดชั่วคราว — รอ Host กลับ (รีเฟรชได้)' });
+      if (room.hostGraceTimer) clearTimeout(room.hostGraceTimer);
+      room.hostGraceTimer = setTimeout(() => {
+        if (!rooms.has(room.code) || room.hostId) return;
+        io.to(room.code).emit('room:closed', { message: 'Host ไม่กลับ — ห้องปิดแล้ว' });
+        rooms.delete(room.code);
+      }, HOST_GRACE_MS);
       return;
     }
 
-    room.players.delete(socket.id);
+    const playerId = socket.data.playerId;
+    if (playerId) detachPlayer(room, playerId, socket.id);
     io.to(room.code).emit('room:update', publicRoom(room));
   });
 });

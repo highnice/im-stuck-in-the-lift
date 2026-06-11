@@ -33,7 +33,76 @@
     return;
   }
 
-  const socket = io();
+  const PLAYER_ID_KEY = 'lift-player-id';
+  const PLAYER_ROOM_KEY = 'lift-room-code';
+  const HOST_ROOM_KEY = 'lift-host-room-code';
+  const HOST_TOKEN_KEY = 'lift-host-token';
+  const LOCAL_STARTED_KEY = 'lift-local-started';
+
+  function getPlayerId() {
+    let id = sessionStorage.getItem(PLAYER_ID_KEY);
+    if (!id) {
+      id = `p_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
+      sessionStorage.setItem(PLAYER_ID_KEY, id);
+    }
+    return id;
+  }
+
+  function savePlayerRoom(code) {
+    if (code) sessionStorage.setItem(PLAYER_ROOM_KEY, code);
+    else sessionStorage.removeItem(PLAYER_ROOM_KEY);
+  }
+
+  function getSavedPlayerRoom() {
+    return sessionStorage.getItem(PLAYER_ROOM_KEY) || '';
+  }
+
+  function saveHostSession(code, hostToken) {
+    if (code) sessionStorage.setItem(HOST_ROOM_KEY, code);
+    else sessionStorage.removeItem(HOST_ROOM_KEY);
+    if (hostToken) sessionStorage.setItem(HOST_TOKEN_KEY, hostToken);
+    else sessionStorage.removeItem(HOST_TOKEN_KEY);
+    sessionStorage.removeItem(PLAYER_ROOM_KEY);
+  }
+
+  function getSavedHostRoom() {
+    return sessionStorage.getItem(HOST_ROOM_KEY) || '';
+  }
+
+  function getSavedHostToken() {
+    return sessionStorage.getItem(HOST_TOKEN_KEY) || '';
+  }
+
+  function markLocalStarted(on) {
+    if (on) sessionStorage.setItem(LOCAL_STARTED_KEY, '1');
+    else sessionStorage.removeItem(LOCAL_STARTED_KEY);
+  }
+
+  function wasLocalStarted() {
+    return sessionStorage.getItem(LOCAL_STARTED_KEY) === '1';
+  }
+
+  function clearAllSession() {
+    sessionStorage.removeItem(PLAYER_ROOM_KEY);
+    sessionStorage.removeItem(HOST_ROOM_KEY);
+    sessionStorage.removeItem(HOST_TOKEN_KEY);
+    sessionStorage.removeItem(LOCAL_STARTED_KEY);
+  }
+
+  function tryAutoRejoin() {
+    const hostCode = getSavedHostRoom();
+    const hostToken = getSavedHostToken();
+    if (hostCode && hostToken) {
+      socket.emit('room:resume', { code: hostCode, hostToken });
+      return;
+    }
+    const playerCode = getSavedPlayerRoom();
+    if (playerCode) {
+      socket.emit('room:join', { code: playerCode, playerId: getPlayerId() });
+    }
+  }
+
+  const socket = io({ transports: ['websocket', 'polling'] });
   let serverOnline = false;
   let isHost = false;
   let roomCode = '';
@@ -157,11 +226,98 @@
     rememberState(state);
     goReleased = true;
     localStarted = false;
+    markLocalStarted(false);
     roundActive = state?.phase === 'voting';
     showStartScreen();
     if (isHost) {
       updateHostDash(state);
       showHostBar(false);
+    }
+  }
+
+  /** กลับเข้าเกมหลังรีเฟรช — ข้ามหน้า Start ถ้าเคยกด Start แล้ว */
+  function resumeGameplay(state) {
+    rememberState(state);
+    goReleased = state.phase !== 'lobby';
+    localStarted = true;
+    markLocalStarted(true);
+    roundActive = state.phase === 'voting';
+    hideMpOverlays();
+    hideStartOverlay();
+    hide(gameOverEl);
+    closeResultPopup(false);
+    firstSummitSceneDone = true;
+    liftFlashDone = true;
+
+    if (state.phase === 'voting') {
+      returnToVoteScreen(state);
+      restoreMyVote(state);
+      return;
+    }
+    if (state.phase === 'round_end') {
+      showLiftScene();
+      if (window.setConeStep) window.setConeStep(state.coneStep);
+      if (window.spinToFloor && state.currentFloor) window.spinToFloor(state.currentFloor);
+      if (isHost) {
+        setHostBarPhase('round_end', state);
+        showHostBar(true);
+      }
+      restoreMyVote(state);
+      return;
+    }
+    if (state.phase === 'lobby') {
+      if (isHost) {
+        updateHostDash(state);
+        showOnly(hostDashEl);
+      } else {
+        const codeEl = document.getElementById('player-joined-code');
+        if (codeEl) codeEl.textContent = roomCode;
+        showOnly(playerJoinedEl);
+      }
+    }
+  }
+
+  function applyJoinedState(state) {
+    rememberState(state);
+    roomCode = state.code;
+    isHost = !!state.isHost;
+    goReleased = state.phase !== 'lobby';
+    roundActive = state.phase === 'voting';
+    setHostBarBusy(false);
+    showHostBar(false);
+
+    if (isHost) {
+      if (state.hostToken) saveHostSession(roomCode, state.hostToken);
+      updateHostDash(state);
+    } else {
+      savePlayerRoom(roomCode);
+      const codeEl = document.getElementById('player-joined-code');
+      if (codeEl) codeEl.textContent = roomCode;
+    }
+
+    const resume = wasLocalStarted() && state.phase !== 'lobby';
+    if (resume) {
+      resumeGameplay(state);
+      return;
+    }
+
+    if (isHost) {
+      if (state.phase === 'lobby') {
+        showOnly(hostDashEl);
+        hideStartOverlay();
+      } else {
+        applyGameGo(state);
+        restoreMyVote(state);
+      }
+      return;
+    }
+
+    if (state.phase === 'lobby') {
+      showOnly(playerJoinedEl);
+      hideStartOverlay();
+    } else {
+      applyGameGo(state);
+      restoreMyVote(state);
     }
   }
 
@@ -300,6 +456,11 @@
       if (label) label.textContent = `ส่ง ${vote} แล้ว`;
     }
     document.querySelectorAll('.floor-btn').forEach((b) => { b.disabled = true; });
+  }
+
+  function restoreMyVote(state) {
+    if (state?.myVote == null) return;
+    lockSummitUI(state.myVote);
   }
 
   function hideLiftScene() {
@@ -447,34 +608,7 @@
   socket.on('room:joined', (state) => {
     clearHostPinError();
     clearPlayerJoinError();
-    rememberState(state);
-    roomCode = state.code;
-    isHost = !!state.isHost;
-    goReleased = state.phase !== 'lobby';
-    localStarted = false;
-    roundActive = state.phase === 'voting';
-    setHostBarBusy(false);
-    showHostBar(false);
-
-    if (isHost) {
-      updateHostDash(state);
-      if (state.phase === 'lobby') {
-        showOnly(hostDashEl);
-        hideStartOverlay();
-      } else {
-        applyGameGo(state);
-      }
-      return;
-    }
-
-    const codeEl = document.getElementById('player-joined-code');
-    if (codeEl) codeEl.textContent = roomCode;
-    if (state.phase === 'lobby') {
-      showOnly(playerJoinedEl);
-      hideStartOverlay();
-    } else {
-      applyGameGo(state);
-    }
+    applyJoinedState(state);
   });
 
   socket.on('room:update', (state) => {
@@ -487,7 +621,16 @@
     if (lastPublicState) lastPublicState = { ...lastPublicState, liftSpeedMult: mult === 2 ? 2 : 1 };
   });
 
+  socket.on('host:away', (msg) => {
+    if (!isHost) notify(msg?.message || 'Host หลุดชั่วคราว — รอ Host กลับ', 'info');
+  });
+
+  socket.on('host:back', (msg) => {
+    notify(msg?.message || 'Host กลับมาแล้ว');
+  });
+
   socket.on('room:closed', (msg) => {
+    clearAllSession();
     notifyError(msg.message || 'ห้องปิดแล้ว');
     setTimeout(() => location.reload(), 1200);
   });
@@ -498,6 +641,7 @@
 
   socket.on('round:ready', (state) => {
     returnToVoteScreen(state);
+    restoreMyVote(state);
   });
 
   socket.on('vote:locked', ({ vote }) => {
@@ -568,6 +712,8 @@
   socket.on('game:over', () => {
     roundActive = false;
     goReleased = false;
+    markLocalStarted(false);
+    clearAllSession();
     setHostBarBusy(false);
     showGameOverScreen();
   });
@@ -591,11 +737,12 @@
   socket.on('connect', () => {
     serverOnline = true;
     checkServerHealth();
+    tryAutoRejoin();
   });
 
   socket.on('disconnect', () => {
     serverOnline = false;
-    setServerStatus('หลุดจาก server — รัน 2-เปิดเกม.bat แล้วรีเฟรช', false);
+    setServerStatus('หลุดชั่วคราว — กำลังเชื่อมใหม่...', false);
   });
 
   socket.on('connect_error', () => {
@@ -645,7 +792,7 @@
       showPlayerJoinError('ใส่รหัสห้อง');
       return;
     }
-    socket.emit('room:join', { code });
+    socket.emit('room:join', { code, playerId: getPlayerId() });
   });
 
   document.getElementById('host-btn-go')?.addEventListener('click', () => {
@@ -715,7 +862,10 @@
     socket.emit('round:process');
   });
   bindHostBtn('host-btn-exit', 'EXIT', () => {
-    if (confirm('จบเกมสำหรับทุกคนในห้องนี้นะครับ?')) socket.emit('game:end');
+    if (confirm('จบเกมสำหรับทุกคนในห้องนี้นะครับ?')) {
+      clearAllSession();
+      socket.emit('game:end');
+    }
   });
 
   bindHostBtn('lift-speed-btn', 'SPEED', () => {
@@ -734,6 +884,7 @@
 
   function onLocalStart() {
     localStarted = true;
+    markLocalStarted(true);
     if (isHost) {
       setHostBarPhase('voting');
       if (lastPublicState) updateHostDash(lastPublicState);
@@ -753,5 +904,9 @@
   };
 
   hideStartOverlay();
-  showOnly(entryEl);
+  if (getSavedHostRoom() || getSavedPlayerRoom()) {
+    if (socket.connected) tryAutoRejoin();
+  } else {
+    showOnly(entryEl);
+  }
 })();
