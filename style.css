@@ -273,6 +273,10 @@ body.scene-restored.doors-open .panel-frame {
 body.scene-restored.is-arrived .cone-container {
   animation: none !important;
 }
+body.scene-restored.is-arrived .door-close-container {
+  visibility: hidden;
+  pointer-events: none;
+}
 
 svg {
   width: 100%;

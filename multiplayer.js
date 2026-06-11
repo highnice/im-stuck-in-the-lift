@@ -487,6 +487,34 @@
     });
   }
 
+  /** ประตู SUMMIT overlay — ค้างสถานะปิดแล้ว ไม่เล่นแอนิเมชันซ้ำ */
+  function settleDoorCloseOverlay() {
+    const doorClose = document.getElementById('door-close-container');
+    if (!doorClose) return;
+    doorClose.classList.remove('is-closing', 'is-shrinking', 'is-opening');
+    doorClose._doorClosed = false;
+    const left = document.getElementById('door-close-left');
+    const right = document.getElementById('door-close-right');
+    const settled = 'translateY(var(--door-lift)) scaleX(0)';
+    if (left) {
+      left.style.animation = 'none';
+      left.style.transform = settled;
+    }
+    if (right) {
+      right.style.animation = 'none';
+      right.style.transform = settled;
+    }
+  }
+
+  function clearDoorCloseInlineStyles() {
+    ['door-close-left', 'door-close-right'].forEach((id) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.style.animation = '';
+      el.style.transform = '';
+    });
+  }
+
   /** รีเฟรชกลางเกม — คืนสถานะสุดท้าย ไม่เล่นแอนิเมชันประตู/LIFT ซ้ำ */
   function restoreActiveVoteScreen(state, phase = 'voting') {
     rememberState(state);
@@ -496,11 +524,7 @@
     closeResultPopup(false);
     hide(gameOverEl);
 
-    const doorClose = document.getElementById('door-close-container');
-    if (doorClose) {
-      doorClose.classList.remove('is-closing', 'is-shrinking', 'is-opening');
-      doorClose._doorClosed = false;
-    }
+    settleDoorCloseOverlay();
 
     const panel = document.querySelector('.panel-frame');
     if (panel) {
@@ -525,8 +549,8 @@
       if (window.setConeStep && state) window.setConeStep(state.coneStep);
       resetVotingUI();
     } else {
-      document.body.classList.remove('doors-open');
-      document.body.classList.add('is-arrived');
+      /* ฉากลิฟท์เลื่อน — ต้องมีทั้ง doors-open + is-arrived (เหมือนตอนเล่นจริง) */
+      document.body.classList.add('doors-open', 'is-arrived');
       showLiftScene();
       if (window.setConeStep && state) window.setConeStep(state.coneStep);
       if (window.spinToFloor && state?.currentFloor) window.spinToFloor(state.currentFloor);
@@ -630,6 +654,7 @@
     }
 
     document.body.classList.remove('scene-restored');
+    clearDoorCloseInlineStyles();
     doorCloseContainer.classList.remove('is-closing', 'is-shrinking', 'is-opening');
     doorCloseContainer._doorClosed = false;
 
