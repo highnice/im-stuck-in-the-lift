@@ -463,6 +463,24 @@ function floorToIndex(floor) {
   return i === -1 ? 0 : i;
 }
 
+/** คืนตำแหน่งกล่อง+ป้ายชั้น (รีเฟรช) — ไม่เล่นแอนิเมชัน */
+function setLiftFloorInstant(floor) {
+  const idx = floorToIndex(floor);
+  const wrap = document.getElementById('direct-panel-wrap');
+  if (wrap) {
+    wrap.style.transition = 'none';
+    wrap.style.setProperty('--direct-step', idx);
+    void wrap.offsetWidth;
+    applyLiftSpeedStyles();
+  }
+  spinToFloor(LIFT_FLOORS[idx]);
+  document.querySelectorAll('.floor-light.is-lit').forEach((el) => el.classList.remove('is-lit'));
+  const floorEl = document.getElementById(`floor-${LIFT_FLOORS[idx]}`);
+  if (floorEl) floorEl.classList.add('is-lit');
+}
+
+window.setLiftFloorInstant = setLiftFloorInstant;
+
 function moveLiftToIndex(idx) {
   document.querySelector('.floor-light.is-lit')?.classList.remove('is-lit');
   const wrap = document.getElementById('direct-panel-wrap');

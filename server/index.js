@@ -54,6 +54,15 @@ function countVotes(room) {
   return n;
 }
 
+function countOnline(room) {
+  let n = 0;
+  if (room.hostId) n += 1;
+  for (const p of room.players.values()) {
+    if (p.socketId) n += 1;
+  }
+  return n;
+}
+
 function joinPayload(room, { isHost, playerId, includeHostToken } = {}) {
   const payload = { ...publicRoom(room), isHost: !!isHost };
   if (isHost && includeHostToken) payload.hostToken = room.hostToken;
@@ -97,6 +106,7 @@ function publicRoom(room) {
     currentFloor: room.currentFloor,
     coneStep: room.coneStep,
     playerCount: room.players.size,
+    onlineCount: countOnline(room),
     votedCount: countVotes(room),
     liftSpeedMult: room.liftSpeedMult === 2 ? 2 : 1,
   };

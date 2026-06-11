@@ -11,6 +11,11 @@
   const hostBarEl = document.getElementById('host-bar');
   const toastEl = document.getElementById('host-toast');
   const statusEl = document.getElementById('server-status');
+  const connPillEl = document.getElementById('game-conn-pill');
+  const connTextEl = document.getElementById('game-conn-text');
+  const roomPillEl = document.getElementById('room-online-pill');
+  const roomOnlineNumEl = document.getElementById('room-online-num');
+  const roomTotalNumEl = document.getElementById('room-total-num');
   const flashEl = document.getElementById('flash-overlay');
 
   const mpOverlayEls = [
@@ -26,6 +31,46 @@
     statusEl.textContent = text;
     statusEl.classList.toggle('server-status-ok', !!ok);
     statusEl.classList.toggle('server-status-bad', !ok);
+  }
+
+  function shouldShowGameStatus() {
+    return !!roomCode && goReleased;
+  }
+
+  function setConnPill(mode) {
+    if (!connPillEl) return;
+    if (mode === 'hide' || !shouldShowGameStatus() || isHost) {
+      connPillEl.classList.add('is-hidden');
+      return;
+    }
+    connPillEl.classList.remove('is-hidden');
+    connPillEl.classList.remove('conn-pill--ok', 'conn-pill--wait', 'conn-pill--bad');
+    connPillEl.classList.add(`conn-pill--${mode}`);
+    if (!connTextEl) return;
+    if (mode === 'ok') connTextEl.textContent = 'ออนไลน์';
+    else if (mode === 'wait') connTextEl.textContent = 'กำลังเชื่อมใหม่…';
+    else connTextEl.textContent = 'Oops! หลุดจากเซิร์ฟเวอร์';
+  }
+
+  function syncConnPill() {
+    if (!shouldShowGameStatus() || isHost) {
+      setConnPill('hide');
+      return;
+    }
+    if (serverOnline && socket.connected) setConnPill('ok');
+    else setConnPill('wait');
+  }
+
+  function updateRoomPill(state) {
+    if (!roomPillEl || !isHost || !shouldShowGameStatus() || !state || state.phase === 'game_over') {
+      roomPillEl?.classList.add('is-hidden');
+      return;
+    }
+    roomPillEl.classList.remove('is-hidden');
+    const online = state.onlineCount ?? 0;
+    const total = (state.playerCount ?? 0) + 1;
+    if (roomOnlineNumEl) roomOnlineNumEl.textContent = String(online);
+    if (roomTotalNumEl) roomTotalNumEl.textContent = String(total);
   }
 
   if (!entryEl || typeof io === 'undefined') {
@@ -233,6 +278,8 @@
       updateHostDash(state);
       showHostBar(false);
     }
+    syncConnPill();
+    updateRoomPill(state);
   }
 
   /** กลับเข้าเกมหลังรีเฟรช — ข้ามหน้า Start ถ้าเคยกด Start แล้ว */
@@ -248,6 +295,9 @@
     closeResultPopup(false);
     firstSummitSceneDone = true;
     liftFlashDone = true;
+
+    syncConnPill();
+    updateRoomPill(state);
 
     if (state.phase === 'voting') {
       restoreActiveVoteScreen(state);
@@ -288,6 +338,9 @@
       const codeEl = document.getElementById('player-joined-code');
       if (codeEl) codeEl.textContent = roomCode;
     }
+
+    syncConnPill();
+    updateRoomPill(state);
 
     const resume = wasLocalStarted() && state.phase !== 'lobby';
     if (resume) {
@@ -396,6 +449,7 @@
     if (barInfo && state) {
       barInfo.innerHTML = buildHostBarInfoHtml(state);
     }
+    updateRoomPill(state);
     if (isHost && localStarted) {
       setHostBarPhase(state?.phase === 'round_end' ? 'round_end' : 'voting', state);
     }
@@ -414,8 +468,10 @@
 
   function showHostBar(visible) {
     if (!hostBarEl) return;
-    const showBar = visible && isHost && localStarted;
-    hostBarEl.classList.toggle('is-hidden', !showBar);
+    const showHeader = isHost && goReleased;
+    const showControls = !!visible && isHost && localStarted;
+    hostBarEl.classList.toggle('is-hidden', !showHeader);
+    hostBarEl.classList.toggle('host-bar--controls-hidden', !showControls);
     syncLiftSpeedBtn();
   }
 
@@ -553,7 +609,9 @@
       document.body.classList.add('doors-open', 'is-arrived');
       showLiftScene();
       if (window.setConeStep && state) window.setConeStep(state.coneStep);
-      if (window.spinToFloor && state?.currentFloor) window.spinToFloor(state.currentFloor);
+      if (state?.currentFloor) {
+        window.setLiftFloorInstant?.(state.currentFloor);
+      }
     }
 
     if (isHost) {
@@ -691,6 +749,7 @@
   socket.on('room:update', (state) => {
     rememberState(state);
     if (isHost) updateHostDash(state);
+    syncConnPill();
   });
 
   socket.on('lift:speed', ({ mult }) => {
@@ -708,6 +767,8 @@
 
   socket.on('room:closed', (msg) => {
     clearAllSession();
+    setConnPill('hide');
+    roomPillEl?.classList.add('is-hidden');
     notifyError(msg.message || 'ห้องปิดแล้ว');
     setTimeout(() => location.reload(), 1200);
   });
@@ -791,6 +852,8 @@
     goReleased = false;
     markLocalStarted(false);
     clearAllSession();
+    setConnPill('hide');
+    roomPillEl?.classList.add('is-hidden');
     setHostBarBusy(false);
     showGameOverScreen();
   });
@@ -800,13 +863,16 @@
       const res = await fetch('/api/health', { cache: 'no-store' });
       const data = await res.json();
       if (data?.ok && data.gameGo) {
-        setServerStatus('เชื่อมต่อ server แล้ว ✓', true);
+        setServerStatus('เชื่อมต่อ server แล้ว', true);
+        syncConnPill();
         return true;
       }
       setServerStatus('Server เก่า โปรดรีเฟรช', false);
+      syncConnPill();
       return false;
     } catch {
-      setServerStatus('เชื่อม server ไม่ได้ ', false);
+      setServerStatus('เชื่อม server ไม่ได้', false);
+      syncConnPill();
       return false;
     }
   }
@@ -814,17 +880,21 @@
   socket.on('connect', () => {
     serverOnline = true;
     checkServerHealth();
+    syncConnPill();
     tryAutoRejoin();
   });
 
   socket.on('disconnect', () => {
     serverOnline = false;
-    setServerStatus('หลุดชั่วคราว — กำลังเชื่อมใหม่...', false);
+    setServerStatus('กำลังเชื่อมใหม่…', false);
+    syncConnPill();
   });
 
   socket.on('connect_error', () => {
     serverOnline = false;
-    setServerStatus('เชื่อม server ไม่ได้ ', false);
+    setServerStatus('เชื่อม server ไม่ได้', false);
+    if (shouldShowGameStatus() && !isHost) setConnPill('bad');
+    else setConnPill('hide');
   });
 
   socket.on('error', handleServerError);
