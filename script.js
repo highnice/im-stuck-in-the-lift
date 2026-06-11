@@ -407,6 +407,7 @@ function spinToFloor(floorStr) {
 }
 
 spinToFloor('G');
+window.spinToFloor = spinToFloor;
 
 const LIFT_FLOORS = ['G', '5', '10', '15', '20', '25', '30', '35', '40'];
 const LIFT_BASE_ARRIVAL_MS = 850;

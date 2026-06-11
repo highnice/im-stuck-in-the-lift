@@ -46,7 +46,7 @@ body.is-arrived {
   --z-doors:           24;   /* ประตูเปิดหน้าฉาก (.door-wrapper-*) */
   --z-below-ui:        25;
   --z-lobby:           26;
-  --z-host-bar:        22;   /* ต้อง > cone(21) — อยู่นอก .game-stage จึงแข่ง z กับฉากลิฟท์ได้ */
+  --z-host-bar:        22;   /* ต่ำกว่าประตู(24) — ไม่ทับฉากเปิดประตูแรก */
   --z-start:           28;
   --z-toast:           29;
   --z-game-over:       30;
@@ -1301,6 +1301,7 @@ body.is-arrived .cone-container {
   --host-exit-top: 14px;
   --host-exit-right: 22px;
   --host-next-bottom: 50px;
+  --host-speed-gap: 6px;
   /* ขนาด */
   --host-info-padding: 2px 10px;
   --host-info-radius: 40px;
@@ -1337,18 +1338,64 @@ body.is-arrived .cone-container {
   pointer-events: none;
 }
 
-#host-bar .host-bar-info {
-  pointer-events: none;
+/* ซ้ายบน: host-bar-info + ปุ่มความเร็วใต้ info */
+#host-bar .host-bar-top-left {
   position: absolute;
   top: var(--host-info-top);
   left: var(--host-info-left);
+  z-index: 2;
   display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--host-speed-gap);
+  pointer-events: none;
+}
+
+#host-bar .host-bar-info {
+  pointer-events: none;
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0;
+  max-width: min(88vw, 17.5rem);
   background: #e0e5ec;
   border-radius: var(--host-info-radius);
   box-shadow: 2px 2px 4px #b8bec9, -2px -2px 4px #ffffff;
   padding: var(--host-info-padding);
+}
+
+#host-bar .lift-speed-btn {
+  pointer-events: auto;
+  position: relative;
+  z-index: 1;
+  min-width: 2.35rem;
+  padding: 0.32rem 0.62rem;
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  border-radius: 999px;
+  background: rgba(224, 229, 236, 0.94);
+  color: #2e3192;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  box-shadow: 2px 2px 5px rgba(8, 30, 66, 0.16), -1px -1px 3px rgba(255, 255, 255, 0.85);
+  transition: background 0.15s ease, transform 0.1s ease;
+}
+#host-bar .lift-speed-btn.is-fast {
+  background: linear-gradient(145deg, #f5d76e, #e8b800);
+  color: #5a4200;
+  border-color: rgba(255, 255, 255, 0.7);
+}
+#host-bar .lift-speed-btn:hover {
+  transform: translateY(-1px);
+}
+#host-bar .lift-speed-btn:active {
+  transform: scale(0.96);
+}
+#host-bar .lift-speed-btn.is-hidden {
+  display: none;
 }
 
 #host-bar .hbi-item {
@@ -1376,6 +1423,11 @@ body.is-arrived .cone-container {
 
 #host-bar .hbi-value-floor {
   color: #3a9ab8;
+}
+
+#host-bar .hbi-value-vote {
+  color: #c2340d;
+  font-weight: 700;
 }
 
 #host-bar .hbi-sep {
@@ -1519,45 +1571,63 @@ body.is-arrived .cone-container {
   border: 2px solid #7f1d1d;
 }
 
-/* popup ผลรอบ — ขนาด + สไตล์การ์ด (แยกจาก lobby 200px) */
+/* popup ผลรอบ — ขนาด + สไตล์การ์ด */
 #result-overlay .lobby-card-result {
-  width: min(72vw, var(--result-card-w, 200px));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.65rem;
+  width: min(78vw, 248px);
   max-width: none;
-  padding: var(--result-card-pad, 1rem 0.75rem);
-  border-radius: 20px;
-  background: rgba(75, 255, 255, 0.5);
+  min-height: 13.5rem;
+  padding: 1.65rem 1.25rem 1.35rem;
+  border-radius: 22px;
+  background: rgba(184, 212, 255, 0.6);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
   border: 1px solid rgba(255, 255, 255, 0.45);
   box-shadow: 0 6px 24px rgba(8, 20, 40, 0.18);
+  box-sizing: border-box;
 }
 
 /* popup ผลรอบลิฟท์ — ตัวเลขชั้น */
-.lobby-card-result .result-floor {
-  font-size: var(--result-floor-size, 2.5rem);
+#result-overlay .result-floor {
+  font-size: 3.1rem;
   font-weight: 900;
   color: #7f1b05;
-  margin: 0.15rem 0;
-  line-height: 1.2;
+  margin: 0.35rem 0;
+  line-height: 1;
 }
 
 /* popup ผลรอบ — หัวข้อ + ยอดรวม */
-.lobby-card-result .result-label,
-.lobby-card-result .result-total {
-  margin: 0.5rem 0;
-  font-size: var(--result-text-size, 1rem);
+#result-overlay .result-label,
+#result-overlay .result-total {
+  margin: 0;
+  font-size: 1rem;
   line-height: 1.4;
   color: #603913;
 }
 
-/* popup ผลรอบ — ปุ่มปิด */
-.lobby-card-result #result-close-btn {
-  margin-top: 0.75rem;
-  width: 100%;
-  padding: 0.75rem 3rem;
-  font-size: 0.88rem;
+/* popup ผลรอบ — ปุ่มปิด ยืดกว้าง */
+#result-overlay #result-close-btn.lobby-btn {
+  display: block;
+  margin: 0.85rem 0 0;
+  width: 92%;
+  max-width: 13rem;
+  padding: 0.65rem 2.25rem;
+  font-size: 0.95rem;
+  font-weight: 700;
+  border-radius: 999px;
+  box-shadow: 2px 2px 4px #b8bec9, -2px -2px 4px #ffffff;
   cursor: pointer;
   pointer-events: auto;
+}
+#result-overlay #result-close-btn.lobby-btn:hover {
+  box-shadow: 3px 3px 6px #b0b6c2, -2px -2px 5px #ffffff;
+}
+#result-overlay #result-close-btn.lobby-btn:active {
+  transform: scale(0.97);
+  box-shadow: inset 3px 3px 8px rgba(0, 0, 0, 0.12), inset -2px -2px 6px rgba(255, 255, 255, 0.2);
 }
 
 /* popup ผลรอบ — พื้นหลังทับจอไม่เบลอ */
@@ -1570,7 +1640,7 @@ body.is-arrived .cone-container {
 #result-overlay .lobby-card {
   pointer-events: auto;
 }
-  
+
 /* จอดำ GAME OVER */
 .game-over-overlay {
   position: fixed;

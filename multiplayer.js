@@ -250,12 +250,12 @@
     liftFlashDone = true;
 
     if (state.phase === 'voting') {
-      returnToVoteScreen(state);
+      restoreActiveVoteScreen(state);
       restoreMyVote(state);
       return;
     }
     if (state.phase === 'round_end') {
-      showLiftScene();
+      restoreActiveVoteScreen(state, 'round_end');
       if (window.setConeStep) window.setConeStep(state.coneStep);
       if (window.spinToFloor && state.currentFloor) window.spinToFloor(state.currentFloor);
       if (isHost) {
@@ -491,6 +491,49 @@
       const el = document.getElementById(id);
       if (el) el.setAttribute('aria-hidden', 'false');
     });
+  }
+
+  /** กลับจอโหวตกลางเกม (รีเฟรช) — ไม่ใช้ hideLiftScene เพราะจะทำให้ LIFT ทับจอ */
+  function restoreActiveVoteScreen(state, phase = 'voting') {
+    rememberState(state);
+    roundActive = phase === 'voting';
+    hideMpOverlays();
+    hideStartOverlay();
+    closeResultPopup(false);
+    hide(gameOverEl);
+
+    document.body.classList.remove('doors-open');
+    document.body.classList.add('is-arrived');
+    showLiftScene();
+
+    const doorClose = document.getElementById('door-close-container');
+    if (doorClose) {
+      doorClose.classList.remove('is-closing', 'is-shrinking');
+      doorClose.classList.add('is-opening');
+      doorClose._doorClosed = false;
+    }
+
+    const panel = document.querySelector('.panel-frame');
+    if (panel) {
+      panel.classList.remove('vote-panel-replay');
+      panel.classList.add('is-floating');
+    }
+
+    if (window.setConeStep && state) window.setConeStep(state.coneStep);
+
+    if (phase === 'voting') {
+      resetVotingUI();
+    }
+
+    if (isHost) {
+      setHostBarPhase(phase, state);
+      updateHostDash(state);
+      showHostBar(true);
+      syncLiftSpeedBtn();
+    } else {
+      showHostBar(false);
+    }
+    if (window.updateSummitEnabled) window.updateSummitEnabled();
   }
 
   function returnToVoteScreen(state) {
