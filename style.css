@@ -249,6 +249,31 @@ body.doors-open .elevator-container {
   to   { transform: translateX(100%); opacity: 0; visibility: hidden; }
 }
 
+/* รีเฟรชกลางเกม — ข้ามแอนิเมชันเปิดประตู/LIFT (ไม่เล่นซ้ำ) */
+body.scene-restored.doors-open .door-wrapper-left {
+  animation: none !important;
+  transform: translateX(-100%);
+  opacity: 0;
+  visibility: hidden;
+}
+body.scene-restored.doors-open .door-wrapper-right {
+  animation: none !important;
+  transform: translateX(100%);
+  opacity: 0;
+  visibility: hidden;
+}
+body.scene-restored.doors-open .elevator-container {
+  animation: none !important;
+  transform: rotateZ(0deg);
+}
+body.scene-restored.doors-open .panel-frame {
+  animation: none !important;
+  transform: scale(var(--vote-panel-scale)) translateX(var(--vote-panel-shift-x));
+}
+body.scene-restored.is-arrived .cone-container {
+  animation: none !important;
+}
+
 svg {
   width: 100%;
   height: 100%;

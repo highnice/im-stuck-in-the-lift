@@ -256,12 +256,6 @@
     }
     if (state.phase === 'round_end') {
       restoreActiveVoteScreen(state, 'round_end');
-      if (window.setConeStep) window.setConeStep(state.coneStep);
-      if (window.spinToFloor && state.currentFloor) window.spinToFloor(state.currentFloor);
-      if (isHost) {
-        setHostBarPhase('round_end', state);
-        showHostBar(true);
-      }
       restoreMyVote(state);
       return;
     }
@@ -493,7 +487,7 @@
     });
   }
 
-  /** กลับจอโหวตกลางเกม (รีเฟรช) — ไม่ใช้ hideLiftScene เพราะจะทำให้ LIFT ทับจอ */
+  /** รีเฟรชกลางเกม — คืนสถานะสุดท้าย ไม่เล่นแอนิเมชันประตู/LIFT ซ้ำ */
   function restoreActiveVoteScreen(state, phase = 'voting') {
     rememberState(state);
     roundActive = phase === 'voting';
@@ -502,14 +496,9 @@
     closeResultPopup(false);
     hide(gameOverEl);
 
-    document.body.classList.remove('doors-open');
-    document.body.classList.add('is-arrived');
-    showLiftScene();
-
     const doorClose = document.getElementById('door-close-container');
     if (doorClose) {
-      doorClose.classList.remove('is-closing', 'is-shrinking');
-      doorClose.classList.add('is-opening');
+      doorClose.classList.remove('is-closing', 'is-shrinking', 'is-opening');
       doorClose._doorClosed = false;
     }
 
@@ -519,10 +508,28 @@
       panel.classList.add('is-floating');
     }
 
-    if (window.setConeStep && state) window.setConeStep(state.coneStep);
+    document.body.classList.add('scene-restored');
 
     if (phase === 'voting') {
+      document.body.classList.remove('is-arrived');
+      document.body.classList.add('doors-open');
+
+      document.querySelector('.floor-indicator-container')?.classList.remove('is-visible');
+      document.querySelector('.control-panel-container')?.classList.remove('is-hidden');
+
+      ['frame-container', 'monitor-container', 'panel-numbers-container', 'direct-panel-container', 'cone-container'].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) el.setAttribute('aria-hidden', 'true');
+      });
+
+      if (window.setConeStep && state) window.setConeStep(state.coneStep);
       resetVotingUI();
+    } else {
+      document.body.classList.remove('doors-open');
+      document.body.classList.add('is-arrived');
+      showLiftScene();
+      if (window.setConeStep && state) window.setConeStep(state.coneStep);
+      if (window.spinToFloor && state?.currentFloor) window.spinToFloor(state.currentFloor);
     }
 
     if (isHost) {
@@ -539,6 +546,7 @@
   function returnToVoteScreen(state) {
     rememberState(state);
     roundActive = true;
+    document.body.classList.remove('scene-restored');
     hideMpOverlays();
     hideStartOverlay();
     closeResultPopup(false);
@@ -621,6 +629,7 @@
       return;
     }
 
+    document.body.classList.remove('scene-restored');
     doorCloseContainer.classList.remove('is-closing', 'is-shrinking', 'is-opening');
     doorCloseContainer._doorClosed = false;
 

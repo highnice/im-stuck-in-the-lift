@@ -22,6 +22,7 @@ startBtn.addEventListener('click', () => {
   }
 
   scene.setAttribute('aria-hidden', 'false');
+  document.body.classList.remove('scene-restored');
   document.body.classList.add('doors-open');
   if (flashEl) flashEl.classList.add('do-flash');
 
