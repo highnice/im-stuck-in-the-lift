@@ -134,6 +134,31 @@
     sessionStorage.removeItem(LOCAL_STARTED_KEY);
   }
 
+  function resetClientAfterLeave() {
+    roomCode = '';
+    isHost = false;
+    goReleased = false;
+    localStarted = false;
+    roundActive = false;
+    lastPublicState = null;
+    hostBarPhase = 'voting';
+    setConnPill('hide');
+    roomPillEl?.classList.add('is-hidden');
+    setHostBarBusy(false);
+    if (hostBarEl) {
+      hostBarEl.classList.add('is-hidden');
+      hostBarEl.classList.remove('host-bar--controls-hidden');
+    }
+    hideStartOverlay();
+  }
+
+  function leaveLobbyToEntry() {
+    if (roomCode && socket.connected) socket.emit('room:leave');
+    clearAllSession();
+    resetClientAfterLeave();
+    showOnly(entryEl);
+  }
+
   function tryAutoRejoin() {
     const hostCode = getSavedHostRoom();
     const hostToken = getSavedHostToken();
@@ -513,6 +538,29 @@
     lockSummitUI(state.myVote);
   }
 
+  const DOOR_CLOSE_LEFT_ATTRS = { x: '199.45', y: '39.63', width: '168.45', height: '725.78' };
+  const DOOR_CLOSE_RIGHT_ATTRS = { x: '31', y: '39.63', width: '168.45', height: '725.78' };
+
+  function resetDoorCloseRects() {
+    const left = document.getElementById('door-close-left');
+    const right = document.getElementById('door-close-right');
+    if (left) Object.entries(DOOR_CLOSE_LEFT_ATTRS).forEach(([k, v]) => left.setAttribute(k, v));
+    if (right) Object.entries(DOOR_CLOSE_RIGHT_ATTRS).forEach(([k, v]) => right.setAttribute(k, v));
+  }
+
+  function resetDoorCloseVisual() {
+    const doorClose = document.getElementById('door-close-container');
+    if (!doorClose) return;
+    doorClose.classList.remove('is-closing', 'is-shrinking', 'is-opening');
+    doorClose._doorClosed = false;
+    if (doorClose._onDoorEnd) {
+      doorClose.removeEventListener('animationend', doorClose._onDoorEnd);
+      doorClose._onDoorEnd = null;
+    }
+    clearDoorCloseInlineStyles();
+    resetDoorCloseRects();
+  }
+
   function hideLiftScene() {
     document.body.classList.remove('is-arrived');
     document.body.classList.add('doors-open');
@@ -520,11 +568,7 @@
     document.querySelector('.floor-indicator-container')?.classList.remove('is-visible');
     document.querySelector('.control-panel-container')?.classList.remove('is-hidden');
 
-    const doorClose = document.getElementById('door-close-container');
-    if (doorClose) {
-      doorClose.classList.remove('is-closing', 'is-shrinking', 'is-opening');
-      doorClose._doorClosed = false;
-    }
+    resetDoorCloseVisual();
 
     ['frame-container', 'monitor-container', 'panel-numbers-container', 'direct-panel-container', 'cone-container'].forEach((id) => {
       const el = document.getElementById(id);
@@ -545,6 +589,7 @@
 
   /** ประตู SUMMIT overlay — ค้างสถานะปิดแล้ว ไม่เล่นแอนิเมชันซ้ำ */
   function settleDoorCloseOverlay() {
+    resetDoorCloseRects();
     const doorClose = document.getElementById('door-close-container');
     if (!doorClose) return;
     doorClose.classList.remove('is-closing', 'is-shrinking', 'is-opening');
@@ -688,16 +733,11 @@
     });
   }
 
-  function enterSummitScene(onReady) {
+  function playDoorCloseSequence(onReady) {
     const finish = () => {
       firstSummitSceneDone = true;
       onReady();
     };
-
-    if (firstSummitSceneDone) {
-      finish();
-      return;
-    }
 
     const safety = setTimeout(finish, 8000);
     const doorCloseContainer = document.getElementById('door-close-container');
@@ -712,9 +752,7 @@
     }
 
     document.body.classList.remove('scene-restored');
-    clearDoorCloseInlineStyles();
-    doorCloseContainer.classList.remove('is-closing', 'is-shrinking', 'is-opening');
-    doorCloseContainer._doorClosed = false;
+    resetDoorCloseVisual();
 
     const onEnd = (e) => {
       if (e.animationName !== 'doorCloseLeft' && e.animationName !== 'doorCloseRight') return;
@@ -730,12 +768,16 @@
       setTimeout(() => {
         doorCloseContainer.classList.replace('is-shrinking', 'is-opening');
         if (isHost && localStarted) showHostBar(true);
-        doorCloseContainer.removeEventListener('animationend', onEnd);
+        if (doorCloseContainer._onDoorEnd) {
+          doorCloseContainer.removeEventListener('animationend', doorCloseContainer._onDoorEnd);
+          doorCloseContainer._onDoorEnd = null;
+        }
         clearTimeout(safety);
         finish();
       }, 700);
     };
 
+    doorCloseContainer._onDoorEnd = onEnd;
     doorCloseContainer.addEventListener('animationend', onEnd);
     doorCloseContainer.classList.add('is-closing');
   }
@@ -840,11 +882,7 @@
       }
     };
 
-    if (firstSummitSceneDone) {
-      runLift();
-    } else {
-      enterSummitScene(runLift);
-    }
+    playDoorCloseSequence(runLift);
   });
 
   socket.on('game:over', () => {
@@ -918,6 +956,14 @@
   document.getElementById('host-pin-back')?.addEventListener('click', () => {
     clearHostPinError();
     showOnly(entryEl);
+  });
+
+  document.getElementById('host-dash-back')?.addEventListener('click', () => {
+    leaveLobbyToEntry();
+  });
+
+  document.getElementById('player-joined-back')?.addEventListener('click', () => {
+    leaveLobbyToEntry();
   });
   hostPinInputEl?.addEventListener('input', clearHostPinError);
   document.getElementById('player-join-back')?.addEventListener('click', () => {

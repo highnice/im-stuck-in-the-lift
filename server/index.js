@@ -485,6 +485,33 @@ io.on('connection', (socket) => {
     socket.emit('action:ok', { action: 'end' });
   });
 
+  socket.on('room:leave', () => {
+    const room = getRoom(socket);
+    if (!room) {
+      socket.data.roomCode = null;
+      socket.data.isHost = false;
+      socket.data.playerId = null;
+      return;
+    }
+    const code = room.code;
+    if (socket.data.isHost && socket.id === room.hostId && room.phase === 'lobby') {
+      if (room.hostGraceTimer) {
+        clearTimeout(room.hostGraceTimer);
+        room.hostGraceTimer = null;
+      }
+      io.to(code).emit('room:closed', { message: 'Host ออกจากห้องแล้ว' });
+      rooms.delete(code);
+    } else if (!socket.data.isHost && room.phase === 'lobby') {
+      const playerId = socket.data.playerId;
+      if (playerId) detachPlayer(room, playerId, socket.id);
+      io.to(room.code).emit('room:update', publicRoom(room));
+    }
+    socket.leave(code);
+    socket.data.roomCode = null;
+    socket.data.isHost = false;
+    socket.data.playerId = null;
+  });
+
   socket.on('disconnect', () => {
     const room = getRoom(socket);
     if (!room) return;
