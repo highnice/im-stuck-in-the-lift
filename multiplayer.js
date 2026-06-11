@@ -726,7 +726,7 @@
         setServerStatus('เชื่อมต่อ server แล้ว ✓', true);
         return true;
       }
-      setServerStatus('Server เก่า ลองอีกครั้ง', false);
+      setServerStatus('Server เก่า โปรดรีเฟรช', false);
       return false;
     } catch {
       setServerStatus('เชื่อม server ไม่ได้ ', false);
